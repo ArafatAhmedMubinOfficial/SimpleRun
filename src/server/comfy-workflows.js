@@ -325,6 +325,59 @@ export async function uploadImageToComfy(comfyUrl, localImagePath) {
   return data.name;
 }
 
+async function submitComfyPrompt(comfyUrl, workflow, clientId) {
+  const res = await fetch(`${comfyUrl}/prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: workflow, client_id: clientId }),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error) {
+    throw new Error(json.error?.message || `ComfyUI /prompt error (${res.status})`);
+  }
+  return json.prompt_id;
+}
+
+async function collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath, { allowPending = false } = {}) {
+  const hRes = await fetch(`${comfyUrl}/history/${encodeURIComponent(promptId)}`);
+  if (!hRes.ok) throw new Error(`Failed reading ComfyUI history: HTTP ${hRes.status}`);
+  const hJson = await hRes.json();
+  const entry = hJson[promptId];
+  if (!entry) {
+    if (allowPending) return null;
+    throw new Error("ComfyUI produced no history entry.");
+  }
+  if (entry.status?.status_str === "error") {
+    throw new Error("ComfyUI reported an execution error.");
+  }
+  if (!entry.outputs) {
+    if (allowPending) return null;
+    throw new Error("ComfyUI produced no outputs.");
+  }
+
+  for (const nodeOut of Object.values(entry.outputs)) {
+    const media = (nodeOut.images && nodeOut.images[0]) || (nodeOut.gifs && nodeOut.gifs[0]);
+    if (media && media.filename) {
+      const qs = new URLSearchParams({
+        filename: media.filename,
+        subfolder: media.subfolder || "",
+        type: media.type || "output",
+      });
+      const viewRes = await fetch(`${comfyUrl}/view?${qs.toString()}`);
+      if (!viewRes.ok) throw new Error(`Failed fetching ComfyUI output view: HTTP ${viewRes.status}`);
+      const buf = Buffer.from(await viewRes.arrayBuffer());
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, buf);
+      if (outPath.endsWith(".png")) {
+        embedPngWorkflowMetadata(outPath, workflow);
+      }
+      return { outPath, bytes: buf.length, comfyFilename: media.filename };
+    }
+  }
+  if (allowPending) return null;
+  throw new Error("ComfyUI completed without image or video output files.");
+}
+
 export async function executeComfyWorkflow({
   comfyUrl,
   workflow,
@@ -333,12 +386,29 @@ export async function executeComfyWorkflow({
   timeoutMs = 15 * 60 * 1000,
 }) {
   const clientId = crypto.randomUUID();
+
+  // Node 20 compatibility fallback: poll /history when global WebSocket is unavailable
+  if (typeof globalThis.WebSocket !== "function") {
+    const promptId = await submitComfyPrompt(comfyUrl, workflow, clientId);
+    onProgress(15, "queued_in_comfyui");
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 350));
+      const res = await collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath, { allowPending: true });
+      if (res) {
+        onProgress(100, "completed");
+        return res;
+      }
+    }
+    throw new Error("ComfyUI execution timed out.");
+  }
+
   const wsUrl = comfyUrl.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(clientId)}`;
 
   return new Promise((resolve, reject) => {
     let settled = false;
     let promptId = null;
-    const ws = new WebSocket(wsUrl);
+    const ws = new globalThis.WebSocket(wsUrl);
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -357,50 +427,16 @@ export async function executeComfyWorkflow({
     };
 
     const collectFromHistory = async () => {
-      const hRes = await fetch(`${comfyUrl}/history/${encodeURIComponent(promptId)}`);
-      if (!hRes.ok) throw new Error(`Failed reading ComfyUI history: HTTP ${hRes.status}`);
-      const hJson = await hRes.json();
-      const entry = hJson[promptId];
-      if (!entry || !entry.outputs) throw new Error("ComfyUI produced no outputs.");
-
-      for (const nodeOut of Object.values(entry.outputs)) {
-        const media = (nodeOut.images && nodeOut.images[0]) || (nodeOut.gifs && nodeOut.gifs[0]);
-        if (media && media.filename) {
-          const qs = new URLSearchParams({
-            filename: media.filename,
-            subfolder: media.subfolder || "",
-            type: media.type || "output",
-          });
-          const viewRes = await fetch(`${comfyUrl}/view?${qs.toString()}`);
-          if (!viewRes.ok) throw new Error(`Failed fetching ComfyUI output view: HTTP ${viewRes.status}`);
-          const buf = Buffer.from(await viewRes.arrayBuffer());
-          fs.mkdirSync(path.dirname(outPath), { recursive: true });
-          fs.writeFileSync(outPath, buf);
-          if (outPath.endsWith(".png")) {
-            embedPngWorkflowMetadata(outPath, workflow);
-          }
-          settled = true;
-          clearTimeout(timer);
-          try { ws.close(); } catch { /* ignore */ }
-          resolve({ outPath, bytes: buf.length, comfyFilename: media.filename });
-          return;
-        }
-      }
-      throw new Error("ComfyUI completed without image or video output files.");
+      const result = await collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath);
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      resolve(result);
     };
 
     ws.addEventListener("open", async () => {
       try {
-        const res = await fetch(`${comfyUrl}/prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: workflow, client_id: clientId }),
-        });
-        const json = await res.json();
-        if (!res.ok || json.error) {
-          return finishError(new Error(json.error?.message || `ComfyUI /prompt error (${res.status})`));
-        }
-        promptId = json.prompt_id;
+        promptId = await submitComfyPrompt(comfyUrl, workflow, clientId);
         onProgress(10, "queued_in_comfyui");
       } catch (err) {
         finishError(err);

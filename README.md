@@ -95,17 +95,30 @@ npm start
 
 *(macOS does not support NVIDIA CUDA ComfyUI packs locally; use **BYOK Cloud Keys**, an external remote ComfyUI URL, or sandbox mode.)*
 
-### Linux (Ubuntu / Debian / Arch)
+### Linux & Cloud GPU Servers (Ubuntu / Debian / Arch)
+
+> **Important:** Default `apt install nodejs` on Ubuntu/Debian often installs an old **Node v12** build, which fails with `SyntaxError: Unexpected token '.'`. Always install **Node.js 22 LTS** (or `>= 20`) first:
 
 ```bash
-# 1. Install Node.js (>= 20), ffmpeg, and Python venv support (Ubuntu/Debian example)
-sudo apt update && sudo apt install -y nodejs npm ffmpeg python3 python3-venv tar
+# 1. Install Node.js 22 LTS + system dependencies (Ubuntu / Debian)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs ffmpeg python3 python3-venv tar
+
+# Running inside a root Docker container without curl/sudo? Use portable binary or install curl first:
+# apt-get update && apt-get install -y curl xz-utils && curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+
+node -v   # Confirm v20+ or v22+
 
 # 2. Clone and run SimpleTun
 git clone https://github.com/ArafatAhmedMubinOfficial/SimpleRun.git
 cd SimpleRun
 npm start
 ```
+
+> **Using a remote Cloud GPU server (RunPod / Vast.ai / SSH)?** Forward port `48199` over SSH from your laptop so SimpleTun stays safely on loopback `127.0.0.1`:
+> ```bash
+> ssh -L 48199:127.0.0.1:48199 root@YOUR_GPU_SERVER_IP
+> ```
 
 Open **[http://127.0.0.1:48199/](http://127.0.0.1:48199/)** in your browser:
 - Studio App: `http://127.0.0.1:48199/`

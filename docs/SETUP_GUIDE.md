@@ -53,14 +53,31 @@ ffmpeg -version
 
 > **macOS note:** ComfyUI PyTorch CUDA wheels require Windows/Linux NVIDIA GPUs. On macOS, run SimpleTun using **BYOK Cloud keys** (OpenAI, Google Imagen/Veo, HuggingFace Inference), point **ComfyUI Endpoint URL** at a Linux/Windows GPU box on your LAN, or use fallback mode for timeline & MCP development.
 
-### Linux
+### Linux & Cloud GPU Pods (Ubuntu / Debian / Docker)
 
-**Ubuntu / Debian:**
+**Ubuntu / Debian (Do NOT rely on distro `apt install nodejs` if it provides Node v12/v18):**
 ```bash
-sudo apt update
-sudo apt install -y git nodejs npm ffmpeg python3 python3-venv python3-pip tar
+# Install Node.js 22 LTS via NodeSource + FFmpeg + Python venv
+sudo apt update && sudo apt install -y git curl ffmpeg python3 python3-venv python3-pip tar
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v   # Verify v22.x
 ```
-*(If your distro ships Node `< 20`, install Node 20/22 LTS via [NodeSource](https://github.com/nodesource/distributions) or `nvm`.)*
+
+**Fast portable Linux install (for root Docker / RunPod / Vast.ai containers with no `sudo` or old `apt` Node):**
+```bash
+apt-get update && apt-get install -y curl xz-utils ffmpeg python3 python3-venv git
+curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+hash -r
+node -v   # Should print v22.14.0
+```
+
+**Remote GPU Pod Access (SSH Tunnel):**
+Because SimpleTun binds to `127.0.0.1` for security, connect from your local machine via:
+```bash
+ssh -L 48199:127.0.0.1:48199 root@YOUR_SERVER_IP
+```
+Then open `http://127.0.0.1:48199/` on your local computer's browser.
 
 **Fedora:**
 ```bash

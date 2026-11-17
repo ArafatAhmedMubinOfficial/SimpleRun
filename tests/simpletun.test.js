@@ -11,7 +11,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { startServer } from "../src/server/index.js";
 import { probeGpuAndSystem } from "../src/server/hardware.js";
 import { parseSafetensorsHeader, scanModelsDirectory, deletePhysicalModelFile } from "../src/server/model-manager.js";
-import { compileComfyWorkflow, embedPngWorkflowMetadata } from "../src/server/comfy-workflows.js";
+import { compileComfyWorkflow, executeComfyWorkflow, embedPngWorkflowMetadata } from "../src/server/comfy-workflows.js";
 import { ControlApiClient, createMcpServer, TOOL_NAMES } from "../packages/mcp-server/src/index.js";
 
 const SAMPLE_PNG_BASE64 =
@@ -696,9 +696,10 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.ok(del.deleted.includes("extra_orphan.safetensors"));
     assert.equal(fs.existsSync(orphanPath), false);
 
-    // Electron entrypoint syntax verification
+    // Electron entrypoint & Node preflight script verification
     execFileSync(process.execPath, ["--check", path.resolve("electron/main.js")]);
     execFileSync(process.execPath, ["--check", path.resolve("electron/preload.js")]);
+    execFileSync(process.execPath, [path.resolve("scripts/check-node.cjs")]);
   });
 
   await t.test("Real ComfyUI HTTP/WebSocket Execution, PNG tEXt Metadata, and Strict Mode", async () => {
@@ -767,6 +768,18 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       fs.writeFileSync(samplePngPath, Buffer.from(SAMPLE_PNG_BASE64, "base64"));
       embedPngWorkflowMetadata(samplePngPath, { testNode: 123 });
       assert.ok(fs.readFileSync(samplePngPath).includes(Buffer.from('"testNode":123')));
+
+      // Verify Node 20 HTTP polling fallback in executeComfyWorkflow when global WebSocket is unavailable
+      const savedWs = globalThis.WebSocket;
+      try {
+        globalThis.WebSocket = undefined;
+        const pollOut = path.join(tempRoot, "comfy_poll_fallback.png");
+        const pollRes = await executeComfyWorkflow({ comfyUrl: mockComfy.url, workflow: wf, outPath: pollOut });
+        assert.ok(fs.existsSync(pollRes.outPath));
+        assert.ok(fs.readFileSync(pollRes.outPath).includes(Buffer.from("tEXtprompt\0")));
+      } finally {
+        globalThis.WebSocket = savedWs;
+      }
 
       // Verify strictRealEngine enforces missing weights (400) AND missing ComfyUI server (failed job)
       await fetch(`${url}/api/ui/settings`, {
