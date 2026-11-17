@@ -57,27 +57,39 @@ export function embedPngWorkflowMetadata(pngPath, workflowObj) {
   fs.writeFileSync(pngPath, patched);
 }
 
-export function resolveComfyPixelDims(aspectRatio = "1:1", resolution = "720p") {
-  const tierBase = resolution === "1080p" ? 1024 : resolution === "480p" ? 512 : 768;
-  const ratios = {
-    "1:1": [1, 1],
-    "16:9": [16, 9],
-    "9:16": [9, 16],
-    "4:3": [4, 3],
-    "3:4": [3, 4],
-  };
-  const [rw, rh] = ratios[aspectRatio] || [1, 1];
-  let w, h;
-  if (rw >= rh) {
-    w = Math.round((tierBase * rw) / rh);
-    h = tierBase;
-  } else {
-    w = tierBase;
-    h = Math.round((tierBase * rh) / rw);
+export function resolveComfyPixelDims(aspectRatio = "1:1", resolution = "720p", isVideo = false) {
+  if (isVideo) {
+    const vidMap = resolution === "1080p" || resolution === "720p"
+      ? { "1:1": [768, 768], "16:9": [1024, 576], "9:16": [576, 1024], "4:3": [896, 672], "3:4": [672, 896] }
+      : { "1:1": [512, 512], "16:9": [832, 480], "9:16": [480, 832], "4:3": [704, 544], "3:4": [544, 704] };
+    const [w, h] = vidMap[aspectRatio] || vidMap["16:9"];
+    return { width: w, height: h };
   }
-  // ComfyUI latent dimensions must be multiples of 16 (or 32 for video)
-  w = Math.max(256, Math.round(w / 32) * 32);
-  h = Math.max(256, Math.round(h / 32) * 32);
+
+  // Exact native SDXL / Flux 1.0 MP trained aspect buckets (avoids 512px tiling/double-subject artifacts)
+  const tier720 = {
+    "1:1": [1024, 1024],
+    "16:9": [1344, 768],
+    "9:16": [768, 1344],
+    "4:3": [1152, 896],
+    "3:4": [896, 1152],
+  };
+  const tier1080 = {
+    "1:1": [1152, 1152],
+    "16:9": [1536, 864],
+    "9:16": [864, 1536],
+    "4:3": [1280, 992],
+    "3:4": [992, 1280],
+  };
+  const tier480 = {
+    "1:1": [768, 768],
+    "16:9": [960, 544],
+    "9:16": [544, 960],
+    "4:3": [896, 672],
+    "3:4": [672, 896],
+  };
+  const table = resolution === "1080p" ? tier1080 : resolution === "480p" ? tier480 : tier720;
+  const [w, h] = table[aspectRatio] || table["1:1"];
   return { width: w, height: h };
 }
 
@@ -100,15 +112,15 @@ export function compileComfyWorkflow({
   loras = [],
   inputImageName = null,
 }) {
-  const { width, height } = resolveComfyPixelDims(aspectRatio, resolution);
+  const arch = preset?.workflowArch || "checkpoint-t2i";
+  const isVideo = arch === "wan-video" || arch === "ltx-video";
+  const { width, height } = resolveComfyPixelDims(aspectRatio, resolution, isVideo);
   const numSteps = Number(steps) || preset?.options?.steps?.default || 20;
   const numCfg = Number(cfg) || preset?.options?.cfg?.default || 4.0;
   const numSeed = Number.isFinite(Number(seed)) ? Math.abs(Math.floor(Number(seed))) : Math.floor(Math.random() * 1e9);
   const primaryModel = preset?.requiredModels?.[0]?.filename || "model.safetensors";
   const clipModel = preset?.requiredModels?.[1]?.filename || null;
   const vaeModel = preset?.requiredModels?.[2]?.filename || null;
-
-  const arch = preset?.workflowArch || "checkpoint-t2i";
 
   // 1. Upscaler / Enhancer graph
   if (arch === "upscale") {

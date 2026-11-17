@@ -721,7 +721,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.ok(["16+", "12", "8", "4-6", "unsupported"].includes(hw.tier));
 
     const modelsRoot = store.modelsDir;
-    const managedPath = path.join(modelsRoot, "checkpoints", "sd_xl_turbo_1.0_fp16.safetensors");
+    const managedPath = path.join(modelsRoot, "checkpoints", "RealVisXL_V5.0_Lightning_fp16.safetensors");
     const orphanPath = path.join(modelsRoot, "checkpoints", "extra_orphan.safetensors");
     const rootMisplacedPath = path.join(modelsRoot, "misplaced.safetensors");
     const corruptPath = path.join(modelsRoot, "checkpoints", "truncated_model.safetensors");
@@ -739,7 +739,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.equal(verifySafetensorsComplete(corruptPath).complete, false);
 
     const scanned = scanModelsDirectory(modelsRoot, store.listPacks(), store.getCapabilities());
-    const managed = scanned.files.find((f) => f.filename === "sd_xl_turbo_1.0_fp16.safetensors");
+    const managed = scanned.files.find((f) => f.filename === "RealVisXL_V5.0_Lightning_fp16.safetensors");
     const orphan = scanned.files.find((f) => f.filename === "extra_orphan.safetensors");
     const misplaced = scanned.files.find((f) => f.filename === "misplaced.safetensors");
     const corrupt = scanned.files.find((f) => f.filename === "truncated_model.safetensors");
@@ -851,7 +851,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
         }),
       });
 
-      // z-image-turbo weight (sd_xl_turbo_1.0_fp16.safetensors) already created above -> passes preflight and fails at offline ComfyUI (no silent fallback)
+      // z-image-turbo weight (RealVisXL_V5.0_Lightning_fp16.safetensors) already created above -> passes preflight and fails at offline ComfyUI (no silent fallback)
       const strictGen = await fetch(`${url}/generate`, {
         method: "POST",
         headers: authHeaders,

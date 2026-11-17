@@ -118,7 +118,7 @@ export const CAPABILITIES = [
     apiProvider: null,
     minVramGb: 4,
     recommendedVramGb: 8,
-    defaultNegativePrompt: "blurry, lowres, jpeg artifacts, watermark, deformed hands, extra fingers",
+    defaultNegativePrompt: "worst quality, low quality, blurry, deformed, bad anatomy, extra heads, duplicate, oversaturated, watermark",
     inputs: {
       acceptsPrompt: true,
       requiresPrompt: true,
@@ -132,8 +132,8 @@ export const CAPABILITIES = [
       supportsLoras: true,
     },
     options: {
-      steps: { min: 4, max: 12, default: 8 },
-      cfg: { min: 1.0, max: 5.0, default: 2.0 },
+      steps: { min: 4, max: 12, default: 6 },
+      cfg: { min: 1.0, max: 3.0, default: 1.5 },
       duration: null,
       resolution: ["720p", "1080p"],
       aspectRatio: ["1:1", "3:4", "4:3", "9:16", "16:9"],
@@ -1018,11 +1018,11 @@ export const CAPABILITIES = [
 export const PRESET_MODEL_SPECS = {
   "z-image-turbo": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler_ancestral",
-    scheduler: "normal",
-    hfInferenceModel: "stabilityai/sdxl-turbo",
+    sampler: "dpmpp_sde",
+    scheduler: "karras",
+    hfInferenceModel: "SG161222/RealVisXL_V5.0_Lightning",
     requiredModels: [
-      { filename: "sd_xl_turbo_1.0_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors", sizeGb: 6.46 },
+      { filename: "RealVisXL_V5.0_Lightning_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/SG161222/RealVisXL_V5.0_Lightning/resolve/main/RealVisXL_V5.0_Lightning_fp16.safetensors", sizeGb: 6.46 },
     ],
   },
   "z-image-pro": {
@@ -1063,11 +1063,11 @@ export const PRESET_MODEL_SPECS = {
   },
   "krea2-turbo": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler_ancestral",
-    scheduler: "normal",
-    hfInferenceModel: "stabilityai/sdxl-turbo",
+    sampler: "dpmpp_sde",
+    scheduler: "karras",
+    hfInferenceModel: "SG161222/RealVisXL_V5.0_Lightning",
     requiredModels: [
-      { filename: "sd_xl_turbo_1.0_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors", sizeGb: 6.46 },
+      { filename: "RealVisXL_V5.0_Lightning_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/SG161222/RealVisXL_V5.0_Lightning/resolve/main/RealVisXL_V5.0_Lightning_fp16.safetensors", sizeGb: 6.46 },
     ],
   },
   "qwen-image-21": {
