@@ -267,7 +267,7 @@ function wireGlobalEvents() {
           : `<div>${esc(hw.gpuName || st.gpuName || "Unknown")} (${hw.vramGb || st.vramGb || 0} GB VRAM)</div>`}
         <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--border-subtle);">
           <strong>RAM / Disk:</strong> ${hw.totalRamGb || "?"} GB RAM · ${hw.freeDiskGb || "?"} GB Free ·
-          <strong>Engine:</strong> ${st.engineRunning ? `<span style="color:var(--emerald);">Running ${st.workerCount || 1} Worker(s) (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? "Installed (Stopped — click Start Engine)" : "Not Installed (click Install below)"}
+          <strong>Engine:</strong> <span id="engStatusSpan">${st.engineRunning ? `<span style="color:var(--emerald);">Running ${st.workerCount || 1} Worker(s) (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? "Installed (Stopped — click Start Engine)" : "Not Installed (click Install below)"}</span>
         </div>
       </div>
       <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
@@ -293,7 +293,7 @@ function wireGlobalEvents() {
         <button class="btn-secondary btn-sm" id="saveComfyUrlBtn">Save Settings &amp; Re-Probe</button>
         <button class="btn-secondary btn-sm" id="refreshLogsBtn">Refresh Logs</button>
       </div>
-      ${logs ? `<pre class="code-pre" style="max-height:150px; overflow:auto; font-size:11px;">${esc(logs)}</pre>` : ""}
+      <pre id="engLogPre" class="code-pre" style="max-height:170px; overflow:auto; font-size:11px; ${logs ? "" : "display:none;"}">${esc(logs)}</pre>
     `);
     document.getElementById("closeEngM").onclick = closeModal;
     document.getElementById("engReprobeBtn").onclick = async () => {
@@ -410,6 +410,27 @@ async function init() {
     const hasActiveFilm = Boolean(uiState.activeFilmTimeline?.rendersRunning);
     if (hasActiveJob || hasActiveDownload || hasActiveInstall || hasActiveFilm) {
       await refreshAll();
+      const logPre = document.getElementById("engLogPre");
+      const engStatusSpan = document.getElementById("engStatusSpan");
+      if (logPre && document.getElementById("modalBackdrop")?.classList.contains("open")) {
+        const logRes = await api("/api/ui/engine/logs").catch(() => null);
+        if (logRes) {
+          logPre.style.display = "block";
+          logPre.textContent = (logRes.logs || []).slice(-28).join("\n");
+          logPre.scrollTop = logPre.scrollHeight;
+          if (engStatusSpan) {
+            engStatusSpan.innerHTML = logRes.installing
+              ? `<span style="color:var(--brand-cyan);">Installing (${esc(logRes.installStage)})</span>`
+              : logRes.installed
+                ? `<span style="color:var(--emerald);">Installed (Ready — click Start Multi-GPU Engine)</span>`
+                : esc(logRes.installStage || "Stopped");
+          }
+          if (!logRes.installing && logRes.installed) {
+            const instBtn = document.getElementById("engInstallBtn");
+            if (instBtn) instBtn.remove();
+          }
+        }
+      }
     }
   }, 600);
 }

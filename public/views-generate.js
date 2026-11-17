@@ -951,7 +951,7 @@ export function renderModelManager(stage, refreshAll) {
           <div style="padding:8px 0; border-bottom:1px solid var(--border-subtle);">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:13px;">
               <strong>${esc(d.filename)}</strong>
-              <span class="tag ${d.status === "completed" ? "green" : d.status === "failed" ? "amber" : "cyan"}">${esc(d.status)} · ${d.percent ?? 0}%${d.speedMbps ? ` (${d.speedMbps} MB/s)` : ""}</span>
+              <span class="tag ${d.status === "completed" ? "green" : d.status === "failed" ? "amber" : "cyan"}">${esc(d.status)} · ${d.percent ?? 0}%${d.downloadedMb ? ` (${d.downloadedMb} MB)` : ""}${d.speedMbps ? ` · ${d.speedMbps} Mbps` : ""}</span>
             </div>
             ${d.status === "downloading" ? `<div class="progress-bar"><div class="progress-fill" style="width:${d.percent || 5}%;"></div></div>` : ""}
             ${d.error ? `<div style="color:#fda4af; font-size:12px; margin-top:4px;">${esc(d.error)}</div>` : ""}

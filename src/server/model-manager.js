@@ -226,8 +226,16 @@ export class ModelDownloadManager {
       headers.Range = `bytes=${existingBytes}-`;
     }
 
+    const ac = new AbortController();
+    let stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
+    const resetStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
+    };
+
     try {
-      const res = await fetch(url, { headers, redirect: "follow" });
+      const res = await fetch(url, { headers, redirect: "follow", signal: ac.signal });
+      resetStall();
       if (res.status === 401 || res.status === 403) {
         record.status = "failed";
         record.error = kind === "huggingface"
@@ -239,6 +247,7 @@ export class ModelDownloadManager {
         // Range not satisfiable; restart from 0
         existingBytes = 0;
         if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
+        clearTimeout(stallTimer);
         return this.downloadFile({ id, url, destPath, authToken, kind });
       }
       if (!res.ok) {
@@ -258,7 +267,9 @@ export class ModelDownloadManager {
       let lastBytes = existingBytes;
 
       reader.on("data", (chunk) => {
+        resetStall();
         record.bytesDownloaded += chunk.length;
+        record.downloadedMb = Number((record.bytesDownloaded / (1024 * 1024)).toFixed(1));
         if (record.totalBytes) {
           record.percent = Math.min(100, Math.round((record.bytesDownloaded / record.totalBytes) * 100));
         }
@@ -282,6 +293,8 @@ export class ModelDownloadManager {
       record.status = "failed";
       record.error = err.message;
       throw err;
+    } finally {
+      clearTimeout(stallTimer);
     }
   }
 }

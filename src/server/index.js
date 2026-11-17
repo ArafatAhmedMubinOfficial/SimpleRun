@@ -4,7 +4,18 @@
 // and Bearer pairing token authentication matching the SimpliGen Control API contract.
 
 import http from "node:http";
+import dns from "node:dns";
+import net from "node:net";
 import fs from "node:fs";
+
+try {
+  dns.setDefaultResultOrder("ipv4first");
+  if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function") {
+    net.setDefaultAutoSelectFamilyAttemptTimeout(250);
+  }
+} catch {
+  // ignore on older runtimes
+}
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SimpleTunStore, ApiError } from "./state.js";

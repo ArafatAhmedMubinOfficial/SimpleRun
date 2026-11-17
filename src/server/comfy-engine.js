@@ -222,26 +222,114 @@ export class ComfyEngineManager {
     return yamlPath;
   }
 
-  async #runLoggedCommand(cmd, args, cwd) {
+  async #runLoggedCommand(cmd, args, cwd, timeoutMs = 15 * 60 * 1000) {
     return new Promise((resolve, reject) => {
       this.log(`$ ${cmd} ${args.join(" ")}`);
       const proc = spawn(cmd, args, { cwd, windowsHide: true });
-      proc.stdout.on("data", (d) => {
-        for (const l of d.toString("utf8").split(/\r?\n/)) {
-          if (l.trim()) this.log(l);
+      const timer = setTimeout(() => {
+        try { proc.kill(); } catch { /* ignore */ }
+        reject(new Error(`${cmd} timed out after ${Math.round(timeoutMs / 1000)}s`));
+      }, timeoutMs);
+      const handleOutput = (d) => {
+        for (const l of d.toString("utf8").split(/[\r\n]+/)) {
+          const clean = l.trim();
+          if (clean) this.log(clean);
         }
+      };
+      proc.stdout.on("data", handleOutput);
+      proc.stderr.on("data", handleOutput);
+      proc.on("error", (e) => {
+        clearTimeout(timer);
+        reject(e);
       });
-      proc.stderr.on("data", (d) => {
-        for (const l of d.toString("utf8").split(/\r?\n/)) {
-          if (l.trim()) this.log(l);
-        }
-      });
-      proc.on("error", reject);
       proc.on("close", (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error(`${cmd} exited with code ${code}`));
       });
     });
+  }
+
+  async #downloadComfyArchive(comfyTarget, tgzPath) {
+    // 1. Prefer git clone --depth 1 (fastest, IPv4/HTTP2, live % progress)
+    try {
+      await this.#runLoggedCommand(
+        "git",
+        ["clone", "--depth", "1", "--branch", COMFYUI_RELEASE_VERSION, "--progress", "https://github.com/comfyanonymous/ComfyUI.git", comfyTarget],
+        this.engineDir,
+        3 * 60 * 1000
+      );
+      if (fs.existsSync(path.join(comfyTarget, "main.py"))) return;
+    } catch (gitErr) {
+      this.log(`git clone fallback (${gitErr.message}) -> trying curl IPv4 tarball...`);
+      if (fs.existsSync(comfyTarget)) fs.rmSync(comfyTarget, { recursive: true, force: true });
+    }
+
+    // 2. Prefer curl -4 (forces IPv4 so dual-stack/Docker IPv6 drops never stall)
+    let downloaded = false;
+    try {
+      await this.#runLoggedCommand(
+        "curl",
+        ["-4", "-fSL", "--connect-timeout", "15", "--max-time", "180", "-o", tgzPath, COMFYUI_TARBALL_URL],
+        this.engineDir,
+        4 * 60 * 1000
+      );
+      downloaded = fs.existsSync(tgzPath) && fs.statSync(tgzPath).size > 100000;
+    } catch (curlErr) {
+      this.log(`curl fallback (${curlErr.message}) -> trying Node fetch with 30s stall timeout...`);
+    }
+
+    // 3. Node fetch fallback with stall watchdog and byte progress
+    if (!downloaded) {
+      const ac = new AbortController();
+      let stallTimer = setTimeout(() => ac.abort(new Error("ComfyUI download stalled (>30s no data)")), 30000);
+      const resetStall = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => ac.abort(new Error("ComfyUI download stalled (>30s no data)")), 30000);
+      };
+      try {
+        const res = await fetch(COMFYUI_TARBALL_URL, { redirect: "follow", signal: ac.signal });
+        if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+        const reader = Readable.fromWeb(res.body);
+        const ws = fs.createWriteStream(tgzPath);
+        let bytes = 0;
+        let lastLog = Date.now();
+        reader.on("data", (chunk) => {
+          resetStall();
+          bytes += chunk.length;
+          if (Date.now() - lastLog > 1200) {
+            lastLog = Date.now();
+            this.log(`Downloaded ${(bytes / (1024 * 1024)).toFixed(1)} MB...`);
+          }
+        });
+        await pipeline(reader, ws);
+        this.log(`Downloaded archive (${(bytes / (1024 * 1024)).toFixed(1)} MB).`);
+      } finally {
+        clearTimeout(stallTimer);
+      }
+    }
+
+    this.installStage = "extracting_comfyui";
+    this.log("Extracting ComfyUI archive...");
+    await execFileAsync("tar", ["-xzf", tgzPath, "-C", this.engineDir], { timeout: 60000 });
+    const extracted = path.join(this.engineDir, `ComfyUI-${COMFYUI_RELEASE_VERSION.replace(/^v/, "")}`);
+    if (fs.existsSync(extracted) && !fs.existsSync(comfyTarget)) {
+      fs.renameSync(extracted, comfyTarget);
+    }
+  }
+
+  async #probeTorchInPython(pyCmd) {
+    try {
+      const { stdout } = await execFileAsync(
+        pyCmd,
+        ["-c", "import torch; print(torch.__version__); print(1 if torch.cuda.is_available() else 0)"],
+        { timeout: 10000 }
+      );
+      const lines = String(stdout).trim().split(/\r?\n/);
+      return { installed: true, version: lines[0] || "unknown", cuda: lines[1] === "1" };
+    } catch {
+      return { installed: false, version: null, cuda: false };
+    }
   }
 
   async installLocalEngine({ cudaSupported = true } = {}) {
@@ -257,53 +345,60 @@ export class ComfyEngineManager {
       const tgzPath = path.join(this.engineDir, `ComfyUI-${COMFYUI_RELEASE_VERSION}.tar.gz`);
 
       if (!fs.existsSync(path.join(comfyTarget, "main.py"))) {
-        this.log(`Downloading ComfyUI ${COMFYUI_RELEASE_VERSION} from ${COMFYUI_TARBALL_URL}...`);
-        const res = await fetch(COMFYUI_TARBALL_URL, { redirect: "follow" });
-        if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
-        await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(tgzPath));
+        this.log(`Downloading ComfyUI ${COMFYUI_RELEASE_VERSION} (fast git/curl IPv4)...`);
+        await this.#downloadComfyArchive(comfyTarget, tgzPath);
+      }
 
-        this.installStage = "extracting_comfyui";
-        this.log("Extracting ComfyUI archive...");
-        await execFileAsync("tar", ["-xzf", tgzPath, "-C", this.engineDir], { timeout: 60000 });
-        const extracted = path.join(this.engineDir, `ComfyUI-${COMFYUI_RELEASE_VERSION.replace(/^v/, "")}`);
-        if (fs.existsSync(extracted) && !fs.existsSync(comfyTarget)) {
-          fs.renameSync(extracted, comfyTarget);
-        }
+      const sysPy = process.platform === "win32" ? "python" : "python3";
+      const sysTorch = await this.#probeTorchInPython(sysPy);
+      if (sysTorch.installed) {
+        this.log(`Detected pre-installed system PyTorch ${sysTorch.version} (CUDA=${sysTorch.cuda}).`);
       }
 
       const venvDir = path.join(this.engineDir, "venv");
       if (!fs.existsSync(venvDir)) {
         this.installStage = "creating_python_venv";
-        this.log("Creating isolated Python virtual environment...");
-        const sysPy = process.platform === "win32" ? "python" : "python3";
-        await this.#runLoggedCommand(sysPy, ["-m", "venv", venvDir], this.engineDir);
+        const useSysSite = sysTorch.installed && (!cudaSupported || sysTorch.cuda);
+        this.log(`Creating Python virtual environment${useSysSite ? " (--system-site-packages to reuse PyTorch)" : ""}...`);
+        try {
+          const venvArgs = useSysSite ? ["-m", "venv", "--system-site-packages", venvDir] : ["-m", "venv", venvDir];
+          await this.#runLoggedCommand(sysPy, venvArgs, this.engineDir);
+        } catch (venvErr) {
+          this.log(`venv unavailable (${venvErr.message}); falling back to system ${sysPy}.`);
+          if (fs.existsSync(venvDir)) fs.rmSync(venvDir, { recursive: true, force: true });
+        }
       }
 
       const pyBin = this.getPythonBin();
-      this.installStage = "installing_pytorch";
-      if (cudaSupported) {
-        this.log("Installing PyTorch with CUDA 12.4 support...");
-        await this.#runLoggedCommand(
-          pyBin,
-          ["-m", "pip", "install", "--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu124"],
-          comfyTarget
-        );
+      const envTorch = await this.#probeTorchInPython(pyBin);
+      if (envTorch.installed && (!cudaSupported || envTorch.cuda)) {
+        this.log(`Reusing PyTorch ${envTorch.version} (CUDA=${envTorch.cuda}) — skipping 3.5 GB wheel download.`);
       } else {
-        this.log("No NVIDIA CUDA GPU detected — installing CPU PyTorch wheels...");
-        await this.#runLoggedCommand(
-          pyBin,
-          ["-m", "pip", "install", "--upgrade", "torch", "torchvision", "torchaudio"],
-          comfyTarget
-        );
+        this.installStage = "installing_pytorch";
+        if (cudaSupported) {
+          this.log("Installing PyTorch with CUDA 12.4 support...");
+          await this.#runLoggedCommand(
+            pyBin,
+            ["-m", "pip", "install", "--prefer-binary", "--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu124"],
+            comfyTarget
+          );
+        } else {
+          this.log("No NVIDIA CUDA GPU detected — installing CPU PyTorch wheels...");
+          await this.#runLoggedCommand(
+            pyBin,
+            ["-m", "pip", "install", "--prefer-binary", "--upgrade", "torch", "torchvision", "torchaudio"],
+            comfyTarget
+          );
+        }
       }
 
       this.installStage = "installing_requirements";
       this.log("Installing ComfyUI requirements.txt...");
-      await this.#runLoggedCommand(pyBin, ["-m", "pip", "install", "-r", "requirements.txt"], comfyTarget);
+      await this.#runLoggedCommand(pyBin, ["-m", "pip", "install", "--prefer-binary", "-r", "requirements.txt"], comfyTarget);
 
       this.writeExtraModelPathsConfig();
       this.installStage = "installed";
-      this.log("ComfyUI engine installation complete!");
+      this.log("ComfyUI engine installation complete! Click 'Start Multi-GPU Engine' to boot workers.");
       return { status: "installed", comfyDir: comfyTarget };
     } catch (err) {
       this.installStage = `failed: ${err.message}`;
