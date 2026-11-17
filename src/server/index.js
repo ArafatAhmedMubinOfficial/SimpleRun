@@ -354,6 +354,7 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
         if (body.comfyUiUrl) {
           store.state.settings.comfyUiUrl = body.comfyUiUrl;
           store.engineManager.comfyUrl = body.comfyUiUrl;
+          store.engineManager.workers = [];
         }
         if (typeof body.externalComfyDir === "string") {
           store.state.settings.externalComfyDir = body.externalComfyDir;
@@ -366,7 +367,10 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
         if (body.byokKeys) store.state.byokKeys = { ...store.state.byokKeys, ...body.byokKeys };
         if (body.settings) {
           store.state.settings = { ...store.state.settings, ...body.settings };
-          if (body.settings.comfyUiUrl) store.engineManager.comfyUrl = body.settings.comfyUiUrl;
+          if (body.settings.comfyUiUrl) {
+            store.engineManager.comfyUrl = body.settings.comfyUiUrl;
+            store.engineManager.workers = [];
+          }
           if (typeof body.settings.externalComfyDir === "string") store.engineManager.externalComfyDir = body.settings.externalComfyDir;
           if (body.settings.modelsDir) store.engineManager.modelsDir = body.settings.modelsDir;
         }

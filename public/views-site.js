@@ -99,15 +99,24 @@ export function renderGpuCheck(stage, switchMode) {
 
     <div class="card-elevated" style="margin-bottom:20px;">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px;">
-        <span class="tag ${hw.cudaSupported ? "green" : "amber"}">Detected Hardware on This Machine</span>
+        <span class="tag ${hw.cudaSupported ? "green" : "amber"}">Detected Hardware (${(hw.gpus || []).length || 1} GPU${((hw.gpus || []).length || 1) > 1 ? "s" : ""} · ${hw.cudaGpuCount ?? 0} CUDA)</span>
         <span style="font-size:12px; color:var(--text-muted);">Tier: <strong>${esc(hw.tier || "unknown")}</strong></span>
       </div>
       <div style="font-family:var(--font-display); font-size:20px; font-weight:700; color:#fff;">
-        ${esc(hw.gpuName || "Unknown GPU")} · ${hw.vramGb ?? 0} GB VRAM
+        ${(hw.cudaGpuCount || 0) > 1
+          ? `${hw.cudaGpuCount}x CUDA GPUs · ${hw.totalVramGb ?? hw.vramGb ?? 0} GB Combined VRAM`
+          : `${esc(hw.gpuName || "Unknown GPU")} · ${hw.vramGb ?? 0} GB VRAM`}
       </div>
-      <div style="font-size:13px; color:var(--text-secondary); margin-top:6px;">
-        CUDA Supported: <strong>${hw.cudaSupported ? `Yes (Compute sm_${esc(hw.computeCap || "?")}, Driver ${esc(hw.driverVersion || "?")})` : "No CUDA GPU detected"}</strong>
-        · System RAM: <strong>${hw.totalRamGb ?? "?"} GB</strong>
+      ${(hw.gpus || []).length > 0 ? `
+        <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--text-secondary);">
+          ${hw.gpus.map((g) => `
+            <div>• <strong>GPU #${g.index}:</strong> ${esc(g.name)} — ${g.vramGb} GB VRAM (${g.cudaSupported ? `CUDA sm_${esc(g.computeCap || "?")}` : "No CUDA"}${g.driverVersion ? `, Driver ${esc(g.driverVersion)}` : ""})</div>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${(hw.cudaGpuCount || 0) > 1 ? `<div style="margin-top:8px; font-size:12.5px; color:var(--emerald);"><strong>Multi-GPU Pool Active:</strong> SimpleTun spawns 1 ComfyUI worker per CUDA GPU (ports 8188–${8187 + hw.cudaGpuCount}) and distributes batch &amp; video renders across them.</div>` : ""}
+      <div style="font-size:13px; color:var(--text-secondary); margin-top:8px;">
+        System RAM: <strong>${hw.totalRamGb ?? "?"} GB</strong>
         · Free Disk Space: <strong>${hw.freeDiskGb ?? "?"} GB</strong>
       </div>
     </div>

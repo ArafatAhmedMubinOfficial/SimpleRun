@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
 
 import { startServer } from "../src/server/index.js";
-import { probeGpuAndSystem } from "../src/server/hardware.js";
+import { probeGpuAndSystem, parseNvidiaSmiCsv, parseNvidiaSmiList, inferCudaFromGpuName } from "../src/server/hardware.js";
 import { parseSafetensorsHeader, scanModelsDirectory, deletePhysicalModelFile } from "../src/server/model-manager.js";
 import { compileComfyWorkflow, executeComfyWorkflow, embedPngWorkflowMetadata } from "../src/server/comfy-workflows.js";
 import { ControlApiClient, createMcpServer, TOOL_NAMES } from "../packages/mcp-server/src/index.js";
@@ -867,6 +867,83 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       });
     } finally {
       mockComfy.close();
+    }
+  });
+
+  await t.test("Multi-GPU Hardware Parsing & Distributed 2-GPU ComfyUI Job Scheduling", async () => {
+    const csvWithCap = parseNvidiaSmiCsv(
+      "0, NVIDIA GeForce RTX 3090, 24576, 24000, 550.54, 8.6\n1, NVIDIA GeForce RTX 3090, 24576, 23900, 550.54, 8.6\n",
+      true
+    );
+    assert.equal(csvWithCap.length, 2);
+    assert.equal(csvWithCap[0].cudaSupported, true);
+    assert.equal(csvWithCap[1].index, 1);
+    assert.equal(csvWithCap[1].vramGb, 24);
+
+    // Driver/container fallback when compute_cap is not queryable
+    const csvNoCap = parseNvidiaSmiCsv(
+      "0, NVIDIA A100-SXM4-40GB, 40960, 40000, 535.10\n1, NVIDIA A100-SXM4-40GB, 40960, 40000, 535.10\n",
+      false
+    );
+    assert.equal(csvNoCap.length, 2);
+    assert.equal(csvNoCap[0].cudaSupported, true);
+    assert.equal(csvNoCap[1].cudaSupported, true);
+
+    const smiList = parseNvidiaSmiList(
+      "GPU 0: NVIDIA RTX A6000 (UUID: GPU-aaa)\nGPU 1: NVIDIA RTX A6000 (UUID: GPU-bbb)\n"
+    );
+    assert.equal(smiList.length, 2);
+    assert.equal(smiList[1].cudaSupported, true);
+    assert.equal(inferCudaFromGpuName("NVIDIA GeForce GTX 1080 Ti").cudaSupported, false);
+
+    // Distributed 2-GPU ComfyUI execution test
+    const gpu0 = await startMockComfyServer();
+    const gpu1 = await startMockComfyServer();
+    try {
+      await fetch(`${url}/api/ui/settings`, {
+        method: "POST",
+        headers: { ...authHeaders, "X-SimpleTun-UI": "1" },
+        body: JSON.stringify({ comfyUiUrl: `${gpu0.url},${gpu1.url}`, settings: { strictRealEngine: false } }),
+      });
+
+      const eng = await (await fetch(`${url}/engine/start`, { method: "POST", headers: authHeaders })).json();
+      assert.equal(eng.engineRunning, true);
+      assert.equal(eng.workerCount, 2);
+
+      const st = await (await fetch(`${url}/status`, { headers: authHeaders })).json();
+      assert.equal(st.workerCount, 2);
+
+      // Dispatch 2 concurrent jobs and confirm least-busy / round-robin worker pool splits across GPU 0 and GPU 1
+      const [g1, g2] = await Promise.all([
+        fetch(`${url}/generate`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ presetId: "z-image-turbo", mediaType: "image", prompt: "gpu worker A" }),
+        }).then((r) => r.json()),
+        fetch(`${url}/generate`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ presetId: "z-image-turbo", mediaType: "image", prompt: "gpu worker B" }),
+        }).then((r) => r.json()),
+      ]);
+
+      let job1, job2;
+      for (let i = 0; i < 60; i++) {
+        job1 = (await (await fetch(`${url}/jobs/${g1.jobId}`, { headers: authHeaders })).json()).job;
+        job2 = (await (await fetch(`${url}/jobs/${g2.jobId}`, { headers: authHeaders })).json()).job;
+        if (job1.status === "completed" && job2.status === "completed") break;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      assert.equal(job1.status, "completed");
+      assert.equal(job2.status, "completed");
+      assert.equal(job1.engineUsed, "comfyui");
+      assert.equal(job2.engineUsed, "comfyui");
+      assert.notEqual(job1.comfyPort, job2.comfyPort, "Expected concurrent jobs to distribute across both ComfyUI GPU workers");
+      assert.equal(gpu0.seenPrompts.size, 1);
+      assert.equal(gpu1.seenPrompts.size, 1);
+    } finally {
+      gpu0.close();
+      gpu1.close();
     }
   });
 });

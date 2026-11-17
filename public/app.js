@@ -41,7 +41,7 @@ function renderQueueDrawer() {
     <div class="job-card">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
         <span class="tag ${j.status === "completed" ? "green" : j.status === "failed" ? "amber" : "cyan"}">${esc(j.status)}</span>
-        <span style="font-size:11.5px; color:var(--text-muted);">${esc(j.presetId)}${j.engineUsed ? ` · ${esc(j.engineUsed)}` : ""}</span>
+        <span style="font-size:11.5px; color:var(--text-muted);">${esc(j.presetId)}${j.engineUsed === "fallback-synthesizer" ? " · Sandbox Preview" : j.engineUsed ? ` · ${esc(j.engineUsed)}` : ""}${j.gpuIndex !== undefined ? ` · GPU #${j.gpuIndex}` : ""}</span>
       </div>
       <div style="font-size:12.5px; margin-top:6px; color:var(--text-primary);">${esc((j.prompt || "").slice(0, 80))}</div>
       ${j.status === "processing" || j.status === "queued" ? `
@@ -105,11 +105,19 @@ function updateChrome() {
   const dot = document.getElementById("engineDot");
   const est = document.getElementById("engineStatusText");
   const esub = document.getElementById("engineSubText");
+  const cudaCount = b.status.cudaGpuCount || 0;
+  const gpuSummary = cudaCount > 1
+    ? `${cudaCount}x GPUs · ${b.status.totalVramGb || b.status.vramGb} GB VRAM`
+    : b.status.gpuName
+      ? `${b.status.gpuName} · ${b.status.vramGb} GB`
+      : b.status.comfyUiUrl;
+
   if (b.status.engineRunning) {
     dot.className = "dot green";
-    est.textContent = "ComfyUI Live";
+    const wc = b.status.workerCount || 1;
+    est.textContent = wc > 1 ? `ComfyUI (${wc} GPUs Live)` : "ComfyUI Live";
     est.style.color = "var(--emerald)";
-    esub.textContent = b.status.gpuName ? `${b.status.gpuName} · ${b.status.vramGb}GB` : b.status.comfyUiUrl;
+    esub.textContent = gpuSummary;
   } else if (b.status.engineInstalling) {
     dot.className = "dot cyan";
     est.textContent = "Installing Engine";
@@ -119,12 +127,12 @@ function updateChrome() {
     dot.className = "dot amber";
     est.textContent = "Engine Stopped";
     est.style.color = "var(--amber)";
-    esub.textContent = b.status.gpuName ? `${b.status.gpuName} · Ready to start` : "ComfyUI Ready to start";
+    esub.textContent = `${gpuSummary} · Click to start`;
   } else {
     dot.className = "dot red";
     est.textContent = "Engine Missing";
     est.style.color = "var(--rose)";
-    esub.textContent = b.status.gpuName ? `${b.status.gpuName} (${b.status.vramGb} GB)` : "Click to install ComfyUI";
+    esub.textContent = `${gpuSummary} · Install ComfyUI`;
   }
 
   // Cloud System Strip
@@ -236,33 +244,50 @@ function wireGlobalEvents() {
     const eng = uiState.bootstrap?.engine || {};
     const settings = uiState.bootstrap?.settings || {};
     const logs = (eng.logs || []).slice(-18).join("\n");
+    const gpuList = hw.gpus || st.gpus || [];
+    const workers = st.workers || [];
     openModal(`
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h3 style="margin:0; font-family:var(--font-display);">Real Local Engine &amp; ComfyUI Manager</h3>
+        <h3 style="margin:0; font-family:var(--font-display);">Real Multi-GPU Engine &amp; ComfyUI Manager</h3>
         <button class="btn-secondary btn-sm" id="closeEngM">Close</button>
       </div>
       <div class="card" style="padding:12px; margin-bottom:12px; font-size:13px; color:var(--text-secondary);">
-        <div><strong>Hardware:</strong> ${esc(hw.gpuName || st.gpuName || "Unknown")} (${hw.vramGb || st.vramGb || 0} GB VRAM · ${hw.cudaSupported ? `CUDA sm_${hw.computeCap || "?"}` : "No CUDA"} · RAM ${hw.totalRamGb || "?"} GB · Free Disk ${hw.freeDiskGb || "?"} GB)</div>
-        <div style="margin-top:4px;"><strong>Engine:</strong> ${st.engineRunning ? `<span style="color:var(--emerald);">Running (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? "Installed (Stopped)" : "Not Installed"}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <strong>Detected GPUs (${gpuList.length || 1} total · ${hw.cudaGpuCount ?? 0} CUDA · ${hw.totalVramGb ?? hw.vramGb ?? 0} GB Combined VRAM)</strong>
+          <button class="btn-secondary btn-sm" id="engReprobeBtn">↻ Re-Probe GPUs</button>
+        </div>
+        ${gpuList.length > 0
+          ? gpuList.map((g, i) => {
+              const w = workers.find((x) => x.gpuIndex === g.index) || workers[i];
+              return `<div style="padding:5px 0; border-top:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span><strong>GPU #${g.index}:</strong> ${esc(g.name)} (${g.vramGb} GB VRAM · ${g.cudaSupported ? `CUDA sm_${g.computeCap || "?"}` : "No CUDA"})</span>
+                ${w ? `<span class="tag ${w.running ? "green" : ""}">${w.running ? `Worker :${w.port} Live (${w.activeJobs} active)` : `Worker :${w.port} Stopped`}</span>` : ""}
+              </div>`;
+            }).join("")
+          : `<div>${esc(hw.gpuName || st.gpuName || "Unknown")} (${hw.vramGb || st.vramGb || 0} GB VRAM)</div>`}
+        <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--border-subtle);">
+          <strong>RAM / Disk:</strong> ${hw.totalRamGb || "?"} GB RAM · ${hw.freeDiskGb || "?"} GB Free ·
+          <strong>Engine:</strong> ${st.engineRunning ? `<span style="color:var(--emerald);">Running ${st.workerCount || 1} Worker(s) (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? "Installed (Stopped — click Start Engine)" : "Not Installed (click Install below)"}
+        </div>
       </div>
       <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
         ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="engInstallBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? "Installing ComfyUI..." : "Install ComfyUI + PyTorch Engine"}</button>` : ""}
-        <button class="btn-primary btn-sm" id="engStartBtn">Start Engine</button>
+        <button class="btn-primary btn-sm" id="engStartBtn">Start Multi-GPU Engine</button>
         <button class="btn-secondary btn-sm" id="engRestartBtn">Restart Engine</button>
-        <button class="btn-danger btn-sm" id="engStopBtn">Stop Engine (Free VRAM)</button>
+        <button class="btn-danger btn-sm" id="engStopBtn">Stop All Workers (Free VRAM)</button>
         <button class="btn-secondary btn-sm" id="engModelsBtn">Model Manager</button>
       </div>
       <div class="field">
-        <label class="field-label">ComfyUI Endpoint URL (local or attached external)</label>
+        <label class="field-label">ComfyUI Endpoint URL(s) (comma-separated for multiple external GPUs, e.g. :8188,:8189)</label>
         <input id="comfyUrlInput" class="input" value="${esc(st.comfyUiUrl || "http://127.0.0.1:8188")}" />
       </div>
       <div class="field">
         <label class="field-label">External ComfyUI Folder Path (optional, if already installed)</label>
-        <input id="extComfyDirInput" class="input" value="${esc(eng.externalComfyDir || "")}" placeholder="e.g. C:\\ComfyUI_windows_portable\\ComfyUI" />
+        <input id="extComfyDirInput" class="input" value="${esc(eng.externalComfyDir || "")}" placeholder="e.g. /opt/ComfyUI or C:\\ComfyUI_windows_portable\\ComfyUI" />
       </div>
       <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:12px; cursor:pointer;">
         <input type="checkbox" id="strictRealChk" ${settings.strictRealEngine ? "checked" : ""} />
-        <span><strong>Strict Real Engine Mode</strong> (require live ComfyUI + weights on disk; disable procedural fallback)</span>
+        <span><strong>Strict Real Engine Mode</strong> (require live ComfyUI + weights on disk; disable sandbox placeholder previews)</span>
       </label>
       <div style="display:flex; gap:8px; margin-bottom:12px;">
         <button class="btn-secondary btn-sm" id="saveComfyUrlBtn">Save Settings &amp; Re-Probe</button>
@@ -271,6 +296,14 @@ function wireGlobalEvents() {
       ${logs ? `<pre class="code-pre" style="max-height:150px; overflow:auto; font-size:11px;">${esc(logs)}</pre>` : ""}
     `);
     document.getElementById("closeEngM").onclick = closeModal;
+    document.getElementById("engReprobeBtn").onclick = async () => {
+      try {
+        await api("/api/ui/hardware?refresh=1");
+        await refreshAll();
+        toast("Hardware re-probed.");
+        document.getElementById("engineSysCard").click();
+      } catch (err) { toast(err.message, true); }
+    };
     const instBtn = document.getElementById("engInstallBtn");
     if (instBtn) {
       instBtn.onclick = async () => {

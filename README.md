@@ -203,18 +203,18 @@ npm run rea:analyze
 ```
 
 Latest verified test & REA checks:
-- `npm test`: **10/10** passing assertions (`tests/simpletun.test.js`).
-- `npm run rea:audit`: `exposed: 0`, `no_exposure_observed_in_assessed_checks: true` (`rea-evidence/simpletun-self-audit.json`).
-- `rea-agents` AST analysis of `./src`: `10` JS files parsed, `239,875` bytes read, `36,202` AST nodes visited, `185` findings, `0` parse failures (`rea-evidence/simpletun-src-summary.json`).
+- `npm test`: **11/11** passing assertions (`tests/simpletun.test.js`, including multi-GPU detection & 2-GPU ComfyUI distribution).
+- `npm run rea:audit`: `exposed: 0`, `no_exposure_observed_in_assessed_checks: true`.
+- `rea-agents` AST analysis of `./src`: `10` JS files parsed, `239,875` bytes read, `36,202` AST nodes visited, `185` findings, `0` parse failures.
 
 ---
 
 ## Architecture
 
-- [`src/server/index.js`](./src/server/index.js) — Loopback HTTP Control API (`127.0.0.1:48199`), DNS-rebinding Host guard, Bearer auth, spend-cap enforcement, and Studio static/SPA server.
-- [`src/server/hardware.js`](./src/server/hardware.js) — GPU/CUDA probe (`nvidia-smi` CSV + Windows `Win32_VideoController`), OS RAM, and `fs.statfsSync` disk metrics.
+- [`src/server/index.js`](./src/server/index.js) — Loopback/remote HTTP Control API (`127.0.0.1:48199` or `--remote`), DNS-rebinding Host guard, Bearer auth, spend-cap enforcement, and Studio static/SPA server.
+- [`src/server/hardware.js`](./src/server/hardware.js) — Multi-GPU CUDA probe (`nvidia-smi` CSV / `-L` / `/proc/driver/nvidia` + Windows `Win32_VideoController`), OS RAM, and `fs.statfsSync` disk metrics.
 - [`src/server/model-manager.js`](./src/server/model-manager.js) — Disk scanner across ComfyUI subfolders, binary `.safetensors` header parser, `Managed`/`External`/`Not in a model folder` status classification, and resumable HTTP `Range` downloader.
-- [`src/server/comfy-engine.js`](./src/server/comfy-engine.js) — ComfyUI (`v0.3.14`) downloader/extractor, Python `venv` + PyTorch CUDA/CPU installer, `extra_model_paths.yaml` generator, and process lifecycle supervisor.
+- [`src/server/comfy-engine.js`](./src/server/comfy-engine.js) — ComfyUI (`v0.3.14`) downloader/extractor, Python `venv` + PyTorch CUDA/CPU installer, `extra_model_paths.yaml` generator, and multi-GPU worker pool (`CUDA_VISIBLE_DEVICES` per GPU, least-busy scheduler).
 - [`src/server/comfy-workflows.js`](./src/server/comfy-workflows.js) — Node-graph compiler (`checkpoint-t2i`, `flux-unet`, `wan-video`, `ltx-video`, `upscale`), HTTP/WebSocket executor, and PNG `tEXt` metadata chunk injector.
 - [`src/server/cloud-providers.js`](./src/server/cloud-providers.js) — Direct REST clients for OpenAI Images, Google Imagen/Veo, and HuggingFace Inference API.
 - [`src/server/audio-video.js`](./src/server/audio-video.js) — PCM decode + RMS onset autocorrelation tempo detector (`400 no_pulse` guard), `ffmpeg` last-frame extractor, and multi-clip MP4 film stitcher.

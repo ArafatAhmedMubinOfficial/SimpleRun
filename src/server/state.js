@@ -238,18 +238,27 @@ export class SimpleTunStore {
 
   async getStatus() {
     const hw = await this.getHardware();
-    const probe = await this.engineManager.probeHttp();
-    this.runtime.engineRunning = probe.running;
+    const workers = await this.engineManager.probeAllWorkers(hw.gpus);
+    const liveWorkers = workers.filter((w) => w.running);
+    const engineRunning = liveWorkers.length > 0;
+    this.runtime.engineRunning = engineRunning;
     const activeProject = this.state.projects.find((p) => p.id === this.state.activeProjectId) || this.state.projects[0];
     return {
-      engineRunning: probe.running,
+      engineRunning,
       engineInstalled: this.engineManager.isInstalled(),
       engineInstalling: this.engineManager.installing,
       engineInstallStage: this.engineManager.installStage,
-      engineVersion: probe.stats?.system?.comfyui_version || (this.engineManager.isInstalled() ? "ComfyUI v0.3.14" : "Not Installed"),
-      comfyUiConnected: probe.running,
+      engineVersion: liveWorkers[0]?.stats?.system?.comfyui_version || (this.engineManager.isInstalled() ? "ComfyUI v0.3.14" : "Not Installed"),
+      comfyUiConnected: engineRunning,
       comfyUiUrl: this.engineManager.comfyUrl,
+      workerCount: liveWorkers.length,
+      totalWorkers: workers.length,
+      workers,
       strictRealEngine: Boolean(this.state.settings.strictRealEngine),
+      gpus: hw.gpus,
+      gpuCount: hw.gpuCount,
+      cudaGpuCount: hw.cudaGpuCount,
+      totalVramGb: hw.totalVramGb,
       gpuName: hw.gpuName,
       vramGb: hw.vramGb,
       cudaSupported: hw.cudaSupported,
@@ -275,10 +284,11 @@ export class SimpleTunStore {
   }
 
   async startEngine() {
-    const hw = await this.getHardware();
+    const hw = await this.getHardware(true);
     const res = await this.engineManager.startEngine({
       allowCpuFallback: Boolean(this.state.settings.allowCpuFallback),
       cudaSupported: hw.cudaSupported,
+      gpus: hw.gpus,
     });
     this.runtime.engineRunning = res.engineRunning;
     this.runtime.engineStarting = res.engineStarting;
@@ -293,17 +303,18 @@ export class SimpleTunStore {
   }
 
   async restartEngine() {
-    const hw = await this.getHardware();
+    const hw = await this.getHardware(true);
     const res = await this.engineManager.restartEngine({
       allowCpuFallback: Boolean(this.state.settings.allowCpuFallback),
       cudaSupported: hw.cudaSupported,
+      gpus: hw.gpus,
     });
     this.runtime.engineRunning = res.engineRunning;
     return res;
   }
 
   installLocalEngine() {
-    this.getHardware().then((hw) => {
+    this.getHardware(true).then((hw) => {
       this.engineManager.installLocalEngine({ cudaSupported: hw.cudaSupported }).catch(() => {});
     });
     return { status: "started", stage: "downloading_comfyui" };
@@ -799,44 +810,54 @@ export class SimpleTunStore {
           job.resultPath = outPath;
           job.resultUrl = `/media/outputs/${outName}`;
         } else {
-          // 3. Check live local ComfyUI server first
-          const probe = await this.engineManager.probeHttp();
-          if (probe.running) {
-            job.stage = "comfyui_executing";
-            let uploadedComfyName = null;
-            if (meta.inputFilePath && fs.existsSync(meta.inputFilePath)) {
-              uploadedComfyName = await uploadImageToComfy(this.engineManager.comfyUrl, meta.inputFilePath);
+          // 3. Distribute across live local ComfyUI GPU workers (least-busy scheduler)
+          const hw = await this.getHardware();
+          const worker = await this.engineManager.acquireWorker(hw.gpus);
+          if (worker) {
+            let workerSucceeded = false;
+            try {
+              job.gpuIndex = worker.gpuIndex;
+              job.gpuName = worker.gpuName;
+              job.comfyPort = worker.port;
+              job.stage = `comfyui_gpu_${worker.gpuIndex}`;
+              let uploadedComfyName = null;
+              if (meta.inputFilePath && fs.existsSync(meta.inputFilePath)) {
+                uploadedComfyName = await uploadImageToComfy(worker.comfyUrl, meta.inputFilePath);
+              }
+              const workflow = compileComfyWorkflow({
+                preset: cap,
+                prompt: job.prompt,
+                negativePrompt: job.negativePrompt,
+                seed: job.seed,
+                steps: job.options.steps,
+                cfg: job.options.cfg,
+                denoise: job.options.denoise ?? 0.72,
+                aspectRatio: job.options.aspectRatio,
+                resolution: job.options.resolution,
+                durationSeconds: job.options.durationSeconds || 4,
+                scale: meta.scale || 2,
+                keepResolution: Boolean(job.options.keepResolution),
+                loras: meta.loras || [],
+                inputImageName: uploadedComfyName,
+              });
+              job.workflow = workflow;
+              const targetComfyOut = job.mediaType === "video" ? outPath.replace(/\.mp4$/, ".webp") : outPath;
+              await executeComfyWorkflow({
+                comfyUrl: worker.comfyUrl,
+                workflow,
+                outPath: targetComfyOut,
+                onProgress: (pct, stage) => {
+                  job.progress = pct;
+                  job.stage = `gpu${worker.gpuIndex}:${stage}`;
+                },
+              });
+              workerSucceeded = true;
+              job.engineUsed = "comfyui";
+              job.resultPath = targetComfyOut;
+              job.resultUrl = `/media/outputs/${path.basename(targetComfyOut)}`;
+            } finally {
+              worker.release(workerSucceeded);
             }
-            const workflow = compileComfyWorkflow({
-              preset: cap,
-              prompt: job.prompt,
-              negativePrompt: job.negativePrompt,
-              seed: job.seed,
-              steps: job.options.steps,
-              cfg: job.options.cfg,
-              denoise: job.options.denoise ?? 0.72,
-              aspectRatio: job.options.aspectRatio,
-              resolution: job.options.resolution,
-              durationSeconds: job.options.durationSeconds || 4,
-              scale: meta.scale || 2,
-              keepResolution: Boolean(job.options.keepResolution),
-              loras: meta.loras || [],
-              inputImageName: uploadedComfyName,
-            });
-            job.workflow = workflow;
-            const targetComfyOut = job.mediaType === "video" ? outPath.replace(/\.mp4$/, ".webp") : outPath;
-            await executeComfyWorkflow({
-              comfyUrl: this.engineManager.comfyUrl,
-              workflow,
-              outPath: targetComfyOut,
-              onProgress: (pct, stage) => {
-                job.progress = pct;
-                job.stage = stage;
-              },
-            });
-            job.engineUsed = "comfyui";
-            job.resultPath = targetComfyOut;
-            job.resultUrl = `/media/outputs/${path.basename(targetComfyOut)}`;
           } else if (this.state.settings.strictRealEngine) {
             throw new Error(
               `Strict Real Engine is enabled, but ComfyUI is not running at ${this.engineManager.comfyUrl}. Start or install Local Engine first.`
@@ -2086,10 +2107,13 @@ export class SimpleTunStore {
     });
     this.save();
 
-    // Sequential rendering respecting linked frame continuity (extractLastFrame -> next I2V clip)
+    // Parallel multi-GPU rendering when independent clips do not chain via link="continue"
     (async () => {
-      let prevVideoPath = null;
-      for (const clip of targets) {
+      const hw = await this.getHardware();
+      const workers = await this.engineManager.probeAllWorkers(hw.gpus);
+      const maxConcurrency = Math.max(1, workers.filter((w) => w.running).length);
+
+      const renderSingleClip = async (clip, prevVideoPath = null) => {
         let startFramePath = null;
         if (clip.link === "continue" && prevVideoPath && fs.existsSync(prevVideoPath)) {
           try {
@@ -2115,7 +2139,7 @@ export class SimpleTunStore {
           prompt,
           options: { aspectRatio: film.aspect, resolution: film.quality, durationSeconds: Math.min(clip.length, 10) },
         });
-        await new Promise((resolve) => {
+        return new Promise((resolve) => {
           this.#executeJobAsync(job, cap, {
             kind: "scene",
             inputFilePath: startFramePath,
@@ -2133,16 +2157,35 @@ export class SimpleTunStore {
               clip.resultUrl = doneJob.resultUrl;
               clip.posterUrl = doneJob.posterUrl;
               clip.take = "current";
-              prevVideoPath = doneJob.resultPath;
-              resolve();
+              resolve(doneJob.resultPath);
             },
             onError: () => {
               clip.take = "none";
-              resolve();
+              resolve(null);
             },
           });
         });
+      };
+
+      // Group clips: linked chains execute sequentially; independent clips fan out across live GPUs
+      let idx = 0;
+      let lastPath = null;
+      while (idx < targets.length) {
+        const nextClip = targets[idx + 1];
+        if (maxConcurrency > 1 && targets[idx].link !== "continue" && (!nextClip || nextClip.link !== "continue")) {
+          const batch = [];
+          while (idx < targets.length && batch.length < maxConcurrency) {
+            if (targets[idx].link === "continue") break;
+            if (targets[idx + 1]?.link === "continue" && batch.length > 0) break;
+            batch.push(targets[idx++]);
+          }
+          const paths = await Promise.all(batch.map((c) => renderSingleClip(c, null)));
+          lastPath = paths[paths.length - 1] || lastPath;
+        } else {
+          lastPath = await renderSingleClip(targets[idx++], lastPath);
+        }
       }
+
       film.rendersRunning = false;
       this.save();
     })();

@@ -178,10 +178,43 @@ export function renderPromptBuilder(stage, refreshAll) {
             </div>
           ` : ""}
 
-          <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
+          ${(() => {
+            const st = uiState.bootstrap?.status || {};
+            const strict = Boolean(uiState.bootstrap?.settings?.strictRealEngine);
+            if (selected.apiProvider) return "";
+            const alerts = [];
+            if (!st.engineInstalled) alerts.push("ComfyUI engine is not installed yet.");
+            else if (!st.engineRunning) alerts.push("ComfyUI engine is installed but stopped.");
+            if (!selected.weightsOnDisk) alerts.push(`Missing local weight file(s) for ${selected.name}.`);
+            if (alerts.length === 0) {
+              return `<div style="margin-top:14px; padding:10px 12px; border-radius:10px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); font-size:12.5px; color:#a7f3d0;">
+                <strong>Ready for Real GPU Execution:</strong> ${st.workerCount || 1} ComfyUI worker(s) live &amp; weights present on disk.
+              </div>`;
+            }
+            return `
+              <div style="margin-top:14px; padding:12px; border-radius:10px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.45); font-size:12.5px; color:#fde68a;">
+                <div style="font-weight:700; margin-bottom:6px;">⚠️ ${esc(alerts.join(" "))}</div>
+                <div style="color:var(--text-secondary); margin-bottom:8px;">
+                  ${strict
+                    ? "Strict Real GPU Mode is ON — generation will wait/fail until ComfyUI is live and weights are downloaded."
+                    : "Until ComfyUI + weights are active, Local Generate produces a labeled Sandbox Preview instead of real diffusion."}
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                  ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="inlineInstallEngBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? `Installing (${esc(st.engineInstallStage)})...` : "Install ComfyUI Engine"}</button>` : ""}
+                  ${st.engineInstalled && !st.engineRunning ? `<button class="btn-primary btn-sm" id="inlineStartEngBtn">▶ Start ComfyUI (${st.cudaGpuCount || 1} GPU)</button>` : ""}
+                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#fff; cursor:pointer; margin-left:auto;">
+                    <input type="checkbox" id="inlineStrictGpuChk" ${strict ? "checked" : ""} />
+                    <span>Real GPU Only (no sandbox)</span>
+                  </label>
+                </div>
+              </div>
+            `;
+          })()}
+
+          <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
             ${!selected.apiProvider ? `
               ${!selected.weightsOnDisk ? `<button class="btn-secondary" id="downloadPresetWeightsBtn">⬇ Download Model Weights (${esc((selected.requiredModels || []).map((m) => m.sizeGb).reduce((a, b) => a + b, 0).toFixed(1))} GB)</button>` : ""}
-              <button class="btn-primary" id="runLocalGenBtn" style="flex:1;">⚡ Generate Local ($0)</button>
+              <button class="btn-primary" id="runLocalGenBtn" style="flex:1;">⚡ ${uiState.bootstrap?.status?.engineRunning ? "Generate on GPU(s) ($0)" : "Generate Local ($0)"}</button>
               ${selected.cloudEligible ? `<button class="btn-secondary" id="runCloudGenBtn" style="flex:1;">☁️ Generate Cloud (${selected.cloudCost * (Number(uiState.form.count) || 1)} cr)</button>` : ""}
             ` : `
               <button class="btn-primary" id="runByokGenBtn" style="flex:1;">🔑 Generate via ${esc(selected.apiProvider.toUpperCase())} BYOK</button>
@@ -405,6 +438,36 @@ export function renderPromptBuilder(stage, refreshAll) {
     }
   };
 
+  const inlineInstBtn = document.getElementById("inlineInstallEngBtn");
+  if (inlineInstBtn) {
+    inlineInstBtn.onclick = async () => {
+      try {
+        await api("/api/ui/engine/install", { method: "POST" });
+        toast("Started ComfyUI + PyTorch CUDA installation (check Engine modal for live logs).");
+        await refreshAll();
+      } catch (err) { toast(err.message, true); }
+    };
+  }
+  const inlineStartBtn = document.getElementById("inlineStartEngBtn");
+  if (inlineStartBtn) {
+    inlineStartBtn.onclick = async () => {
+      try {
+        const r = await api("/engine/start", { method: "POST" });
+        toast(r.engineRunning ? `Started ${r.workerCount || 1} ComfyUI GPU worker(s)!` : "ComfyUI workers booting...");
+        await refreshAll();
+      } catch (err) { toast(err.message, true); }
+    };
+  }
+  const inlineStrict = document.getElementById("inlineStrictGpuChk");
+  if (inlineStrict) {
+    inlineStrict.onchange = async () => {
+      try {
+        await api("/api/ui/settings", { method: "POST", body: { settings: { strictRealEngine: inlineStrict.checked } } });
+        toast(inlineStrict.checked ? "Strict Real GPU Mode enabled." : "Sandbox fallback allowed.");
+        await refreshAll();
+      } catch (err) { toast(err.message, true); }
+    };
+  }
   const dlWeightsBtn = document.getElementById("downloadPresetWeightsBtn");
   if (dlWeightsBtn) {
     dlWeightsBtn.onclick = async () => {
@@ -682,7 +745,7 @@ export function renderGallery(stage, refreshAll) {
               : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; flex-wrap:wrap;">
               <span class="tag cyan">${esc(j.presetId)}</span>
-              <span class="tag">${esc(j.engineUsed || j.backend)}</span>
+              <span class="tag ${j.engineUsed === "fallback-synthesizer" ? "amber" : "green"}">${j.engineUsed === "fallback-synthesizer" ? "Sandbox Preview" : esc(j.engineUsed || j.backend)}${j.gpuIndex !== undefined ? ` · GPU #${j.gpuIndex}` : ""}</span>
             </div>
             <div style="font-size:12.5px; color:var(--text-primary); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(j.prompt)}</div>
             <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
