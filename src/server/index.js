@@ -41,13 +41,53 @@ const MIME_TYPES = {
   ".ogg": "audio/ogg",
 };
 
-function isLoopbackHost(hostHeader = "") {
+function extractHostname(hostHeader = "") {
   const host = String(hostHeader).toLowerCase().trim();
-  if (!host) return false;
-  const hostname = host.startsWith("[")
-    ? host.slice(0, host.indexOf("]") + 1)
-    : host.split(":")[0];
+  if (!host) return "";
+  return host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+}
+
+function isLoopbackHost(hostHeader = "") {
+  const hostname = extractHostname(hostHeader);
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
+}
+
+function isAllowedHost(hostHeader = "", { allowRemoteHosts = false, allowedHosts = [] } = {}) {
+  const hostname = extractHostname(hostHeader);
+  if (!hostname) return false;
+  if (isLoopbackHost(hostHeader)) return true;
+  if (allowRemoteHosts) return true;
+  return allowedHosts.some((entry) => {
+    const clean = String(entry || "").toLowerCase().trim();
+    if (!clean) return false;
+    if (clean.startsWith("*.")) return hostname.endsWith(clean.slice(1));
+    return hostname === clean;
+  });
+}
+
+function resolveNetworkConfig(opts = {}) {
+  const argv = process.argv.slice(2);
+  const hasRemoteFlag = argv.includes("--remote") || argv.includes("--allow-remote");
+  const hostArg = argv.find((a) => a.startsWith("--host="))?.slice("--host=".length);
+  const envHost = process.env.SIMPLETUN_HOST || process.env.HOST;
+  const host = opts.host || hostArg || envHost || (hasRemoteFlag ? "0.0.0.0" : "127.0.0.1");
+
+  const envAllowed = (process.env.SIMPLETUN_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const allowedHosts = Array.isArray(opts.allowedHosts) ? opts.allowedHosts : envAllowed;
+
+  const allowRemoteHosts =
+    opts.allowRemoteHosts ??
+    (hasRemoteFlag ||
+      process.env.SIMPLETUN_ALLOW_REMOTE === "1" ||
+      process.env.SIMPLETUN_ALLOW_REMOTE === "true" ||
+      process.env.SIMPLETUN_ALLOW_ALL_HOSTS === "1" ||
+      host === "0.0.0.0" ||
+      host === "::");
+
+  return { host, allowRemoteHosts, allowedHosts };
 }
 
 function sendJson(res, status, data) {
@@ -137,17 +177,32 @@ function loadReaEvidenceSummary() {
   return result;
 }
 
-export function createSimpleTunServer({ rootDir = ROOT_DIR } = {}) {
+const PUBLIC_STATIC_FILES = new Set([
+  "/styles.css",
+  "/app.js",
+  "/api.js",
+  "/views-generate.js",
+  "/views-studios.js",
+  "/views-site.js",
+]);
+
+export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, allowedHosts } = {}) {
   const store = new SimpleTunStore(rootDir);
+  const netCfg = resolveNetworkConfig({ allowRemoteHosts, allowedHosts });
 
   const server = http.createServer(async (req, res) => {
     try {
-      // DNS-rebinding guard: reject non-loopback Host headers
-      if (!isLoopbackHost(req.headers.host)) {
-        return sendJson(res, 403, { errorCode: "forbidden_host", message: "Non-loopback Host header rejected." });
+      // DNS-rebinding guard: reject non-loopback Host headers unless remote access is configured
+      if (!isAllowedHost(req.headers.host, netCfg)) {
+        return sendJson(res, 403, {
+          errorCode: "forbidden_host",
+          message:
+            "Non-loopback Host header rejected. To access from a remote PC or cloud proxy, start with: npm run start:remote (or SIMPLETUN_ALLOW_REMOTE=1).",
+        });
       }
 
-      const url = new URL(req.url || "/", `http://${req.headers.host}`);
+      const safeHost = req.headers.host || "127.0.0.1";
+      const url = new URL(req.url || "/", `http://${safeHost}`);
       const pathname = decodeURIComponent(url.pathname);
       const method = req.method || "GET";
 
@@ -155,7 +210,7 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR } = {}) {
       if (method === "GET" && (pathname === "/" || pathname === "/landing" || pathname === "/video-studio" || pathname === "/gpu-check" || pathname === "/docs" || pathname === "/pricing")) {
         return serveFileWithRange(req, res, path.join(PUBLIC_DIR, "index.html"));
       }
-      if (method === "GET" && (pathname === "/styles.css" || pathname === "/app.js" || pathname.startsWith("/assets/"))) {
+      if (method === "GET" && (PUBLIC_STATIC_FILES.has(pathname) || pathname.startsWith("/assets/"))) {
         const rel = pathname.replace(/^\/+/, "");
         const safePath = path.resolve(PUBLIC_DIR, rel);
         if (!safePath.startsWith(PUBLIC_DIR)) return sendJson(res, 403, { errorCode: "forbidden", message: "Forbidden" });
@@ -546,19 +601,31 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR } = {}) {
   return { server, store };
 }
 
-export async function startServer({ port = Number(process.env.SIMPLETUN_PORT || process.env.PORT || 48199), rootDir = ROOT_DIR } = {}) {
-  const { server, store } = createSimpleTunServer({ rootDir });
+export async function startServer({
+  port = Number(process.env.SIMPLETUN_PORT || process.env.PORT || 48199),
+  host,
+  allowRemoteHosts,
+  allowedHosts,
+  rootDir = ROOT_DIR,
+} = {}) {
+  const netCfg = resolveNetworkConfig({ host, allowRemoteHosts, allowedHosts });
+  const listenHost = netCfg.host;
+  const { server, store } = createSimpleTunServer({
+    rootDir,
+    allowRemoteHosts: netCfg.allowRemoteHosts,
+    allowedHosts: netCfg.allowedHosts,
+  });
 
   await new Promise((resolve, reject) => {
     const onError = (err) => {
       if (err.code === "EADDRINUSE" && port !== 0) {
-        server.listen(0, "127.0.0.1", resolve);
+        server.listen(0, listenHost, resolve);
       } else {
         reject(err);
       }
     };
     server.once("error", onError);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, listenHost, () => {
       server.off("error", onError);
       resolve();
     });
@@ -568,13 +635,24 @@ export async function startServer({ port = Number(process.env.SIMPLETUN_PORT || 
   const actualPort = typeof addr === "object" && addr ? addr.port : port;
   store.writeDiscovery(actualPort);
 
-  return { server, store, port: actualPort, url: `http://127.0.0.1:${actualPort}` };
+  const displayHost = listenHost === "0.0.0.0" || listenHost === "::" ? "127.0.0.1" : listenHost;
+  return {
+    server,
+    store,
+    port: actualPort,
+    host: listenHost,
+    allowRemoteHosts: netCfg.allowRemoteHosts,
+    url: `http://${displayHost}:${actualPort}`,
+  };
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
-  startServer().then(({ port, url }) => {
-    console.log(`[SimpleTun] Control API & Studio running at ${url} (port ${port})`);
+  startServer().then(({ port, host, allowRemoteHosts, url }) => {
+    console.log(`[SimpleTun] Control API & Studio running at ${url} (bound ${host}:${port})`);
+    if (allowRemoteHosts) {
+      console.log(`[SimpleTun] Remote/Proxy Host mode ENABLED (listening on ${host}:${port}). Protect public ports with a firewall or trusted proxy.`);
+    }
     console.log(`[SimpleTun] Open-Source Pairing Token: st-agent-simpletun-open`);
   });
 }

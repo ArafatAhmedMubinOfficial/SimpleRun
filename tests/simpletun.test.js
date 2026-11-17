@@ -197,12 +197,17 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  await t.test("Health, DNS-rebinding Host guard (403), and Bearer auth (401)", async () => {
+  await t.test("Health, Static UI Assets, DNS-rebinding Host guard (403), Remote Host Opt-in, and Bearer auth (401)", async () => {
     const health = await fetch(`${url}/health`);
     assert.equal(health.status, 200);
     const hj = await health.json();
     assert.equal(hj.ok, true);
     assert.equal(hj.name, "simpletun");
+
+    for (const asset of ["/", "/styles.css", "/app.js", "/api.js", "/views-generate.js", "/views-studios.js", "/views-site.js"]) {
+      const aRes = await fetch(`${url}${asset}`);
+      assert.equal(aRes.status, 200, `Expected 200 for UI static asset ${asset}`);
+    }
 
     const badHost = await rawHttpGet(port, "/health", { Host: "evil.example.com" });
     assert.equal(badHost.status, 403);
@@ -212,6 +217,37 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.equal(unauth.status, 401);
     const uj = await unauth.json();
     assert.equal(uj.errorCode, "unauthorized");
+
+    // Remote / cloud proxy Host opt-in
+    const remoteSrv = await startServer({
+      port: 0,
+      rootDir: tempRoot,
+      allowedHosts: ["*.proxy.runpod.net", "gpu-box.lan"],
+    });
+    try {
+      const okProxy = await rawHttpGet(remoteSrv.port, "/health", { Host: "abc-48199.proxy.runpod.net" });
+      assert.equal(okProxy.status, 200);
+      assert.equal(okProxy.body.ok, true);
+      const blockedProxy = await rawHttpGet(remoteSrv.port, "/health", { Host: "evil.example.com" });
+      assert.equal(blockedProxy.status, 403);
+    } finally {
+      remoteSrv.server.closeAllConnections?.();
+      remoteSrv.server.close();
+    }
+
+    const openRemoteSrv = await startServer({
+      port: 0,
+      rootDir: tempRoot,
+      allowRemoteHosts: true,
+    });
+    try {
+      const okRemote = await rawHttpGet(openRemoteSrv.port, "/health", { Host: "192.168.1.55:48199" });
+      assert.equal(okRemote.status, 200);
+      assert.equal(okRemote.body.ok, true);
+    } finally {
+      openRemoteSrv.server.closeAllConnections?.();
+      openRemoteSrv.server.close();
+    }
   });
 
   await t.test("Status, Capabilities, Real Engine 409 check, Prompt Guides, and Disk LoRAs", async () => {

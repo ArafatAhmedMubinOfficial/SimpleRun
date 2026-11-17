@@ -115,10 +115,9 @@ cd SimpleRun
 npm start
 ```
 
-> **Using a remote Cloud GPU server (RunPod / Vast.ai / SSH)?** Forward port `48199` over SSH from your laptop so SimpleTun stays safely on loopback `127.0.0.1`:
-> ```bash
-> ssh -L 48199:127.0.0.1:48199 root@YOUR_GPU_SERVER_IP
-> ```
+> **Using a remote PC, Cloud GPU pod (RunPod / Vast.ai), or LAN IP?** Choose either option:
+> - **Option 1 — Direct Remote / Proxy Access:** Start with `npm run start:remote` (binds `0.0.0.0` and allows proxy/LAN `Host` headers) or keep loopback binding behind a proxy with `SIMPLETUN_ALLOW_REMOTE=1 npm start`.
+> - **Option 2 — SSH Tunnel (Recommended on public networks):** Keep loopback-only mode and run `ssh -L 48199:127.0.0.1:48199 root@YOUR_GPU_SERVER_IP` from your local laptop, then open `http://127.0.0.1:48199/`.
 
 Open **[http://127.0.0.1:48199/](http://127.0.0.1:48199/)** in your browser:
 - Studio App: `http://127.0.0.1:48199/`
@@ -176,13 +175,16 @@ SimpleTun ships a clean-room stdio MCP server implementing all **74 Control API 
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SIMPLETUN_PORT` / `PORT` | `48199` | Loopback port (`127.0.0.1`) for HTTP Control API & Studio UI (`0` binds an ephemeral port). |
+| `SIMPLETUN_PORT` / `PORT` | `48199` | Port for HTTP Control API & Studio UI (`0` binds an ephemeral port). |
+| `SIMPLETUN_HOST` / `HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for LAN access; automatically enables remote `Host` headers). |
+| `SIMPLETUN_ALLOW_REMOTE` | `0` | Set `1` to accept non-loopback proxy/LAN `Host` headers (`npm run start:remote` sets both `--host=0.0.0.0` & remote hosts). |
+| `SIMPLETUN_ALLOWED_HOSTS` | — | Comma-separated host allowlist (supports wildcard prefix like `*.proxy.runpod.net`). |
 | `SIMPLETUN_TOKEN` | — | Bearer pairing token used by `packages/mcp-server/src/bin.js` (also `--token <tok>`). |
 | `SIMPLETUN_API_PORT` | Auto-discovered | Override port used by the MCP client (`--port <num>` also supported). |
 | `SIMPLETUN_USERDATA_DIR` | `./data` | Override discovery directory where `agent-api.json` is located. |
 
 **Security Model:**
-- Binds exclusively to loopback (`127.0.0.1`) and rejects non-loopback `Host` headers (`403 forbidden_host`) to prevent DNS-rebinding attacks.
+- Defaults to loopback (`127.0.0.1`) and rejects non-loopback `Host` headers (`403 forbidden_host`) to block DNS-rebinding attacks unless opted into remote/proxy access (`npm run start:remote`, `SIMPLETUN_ALLOW_REMOTE=1`, or `SIMPLETUN_ALLOWED_HOSTS`).
 - Control API routes require `Authorization: Bearer <token>` (`401 unauthorized` otherwise); built-in UI default token is `st-agent-simpletun-open`.
 
 ---

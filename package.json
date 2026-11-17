@@ -7,6 +7,7 @@
   "main": "src/server/index.js",
   "scripts": {
     "start": "node scripts/check-node.cjs && node src/server/index.js",
+    "start:remote": "node scripts/check-node.cjs && node src/server/index.js --remote",
     "dev": "node scripts/check-node.cjs && node --watch src/server/index.js",
     "electron": "node scripts/check-node.cjs && electron electron/main.js",
     "mcp": "node scripts/check-node.cjs && node packages/mcp-server/src/bin.js",

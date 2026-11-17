@@ -72,12 +72,19 @@ hash -r
 node -v   # Should print v22.14.0
 ```
 
-**Remote GPU Pod Access (SSH Tunnel):**
-Because SimpleTun binds to `127.0.0.1` for security, connect from your local machine via:
-```bash
-ssh -L 48199:127.0.0.1:48199 root@YOUR_SERVER_IP
-```
-Then open `http://127.0.0.1:48199/` on your local computer's browser.
+**Remote GPU Pod / Cloud Proxy / LAN Access:**
+By default SimpleTun rejects non-loopback `Host` headers (`403 forbidden_host`) to block DNS-rebinding attacks. When connecting from another computer:
+- **Cloud proxy URL (RunPod, Vast.ai, Cloudflare Tunnel, nginx) or LAN IP:**
+  ```bash
+  npm run start:remote
+  # Or allow specific proxy hosts only:
+  SIMPLETUN_ALLOWED_HOSTS="*.proxy.runpod.net" SIMPLETUN_HOST=127.0.0.1 npm start
+  ```
+- **Or SSH tunnel (keeps strict loopback-only mode):**
+  ```bash
+  ssh -L 48199:127.0.0.1:48199 root@YOUR_SERVER_IP
+  ```
+  Then open `http://127.0.0.1:48199/` on your local computer's browser.
 
 **Fedora:**
 ```bash
