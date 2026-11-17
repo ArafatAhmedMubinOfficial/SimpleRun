@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SimpleTun — Open-Source Studio-Grade AI Image & Video</title>
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="ambient-glow" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup" id="brandHomeBtn" title="SimpleTun Studio">
+        <div class="brand-icon brand-gradient">ST</div>
+        <span class="brand-name">SimpleTun</span>
+        <span class="badge-oss">Open Source · MIT</span>
+      </div>
+
+      <nav class="top-nav" aria-label="Primary Views">
+        <button class="top-nav-btn active" data-mode="studio">Studio App</button>
+        <button class="top-nav-btn" data-mode="video-studio">Video Studio</button>
+        <button class="top-nav-btn" data-mode="landing">Website</button>
+        <button class="top-nav-btn" data-mode="gpu-check">GPU Check</button>
+        <button class="top-nav-btn" data-mode="docs">Docs</button>
+        <button class="top-nav-btn" data-mode="rea">REA Forensics</button>
+      </nav>
+
+      <div class="top-actions">
+        <select id="projectSelect" class="select-pill" title="Active Project"></select>
+        <button id="newProjectBtn" class="btn-secondary btn-sm">+ Project</button>
+        <button id="queueToggleBtn" class="btn-pill">
+          Queue <span id="queueBadge" class="tag cyan" style="margin-left:4px;">0</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="appBody" class="studio-body">
+      <aside id="leftRail" class="left-rail">
+        <div>
+          <div class="rail-section-label">Create</div>
+          <div class="rail-nav">
+            <button class="rail-item active" data-screen="generate"><span class="rail-left">🪄 Prompt Builder</span></button>
+            <button class="rail-item" data-screen="characters"><span class="rail-left">👤 Character Studio</span><span id="charCountBadge" class="rail-badge">0</span></button>
+            <button class="rail-item" data-screen="video-studio"><span class="rail-left">🎬 Video Studio</span><span id="filmCountBadge" class="rail-badge">0</span></button>
+            <button class="rail-item" data-screen="product-studio"><span class="rail-left">📦 Product Studio</span></button>
+            <button class="rail-item" data-screen="ugc-studio"><span class="rail-left">📱 UGC Studio</span></button>
+            <button class="rail-item" data-screen="recipes"><span class="rail-left">⚡ Recipe Editor</span></button>
+            <button class="rail-item" data-screen="enhance"><span class="rail-left">✨ Enhance & Upscale</span></button>
+          </div>
+
+          <div class="rail-section-label">Library & Engine</div>
+          <div class="rail-nav">
+            <button class="rail-item" data-screen="gallery"><span class="rail-left">🖼️ Gallery</span><span id="galleryCountBadge" class="rail-badge">0</span></button>
+            <button class="rail-item" data-screen="preset-store"><span class="rail-left">🏪 Preset Store</span></button>
+            <button class="rail-item" data-screen="model-manager"><span class="rail-left">💾 Model Manager</span></button>
+            <button class="rail-item" data-screen="agent-mcp"><span class="rail-left">🤖 Connect Agent (MCP)</span></button>
+          </div>
+        </div>
+
+        <div class="system-strip">
+          <div id="engineSysCard" class="sys-card">
+            <div class="sys-row">
+              <span><span id="engineDot" class="dot green"></span>Local Engine</span>
+              <span id="engineStatusText" style="color:var(--emerald); font-size:11px;">Running</span>
+            </div>
+            <div id="engineSubText" style="color:var(--text-muted); font-size:11.5px; margin-top:4px;">Open Engine + ComfyUI Bridge</div>
+          </div>
+
+          <div id="cloudSysCard" class="sys-card">
+            <div class="sys-row">
+              <span><span id="cloudDot" class="dot cyan"></span>Cloud / Credits</span>
+              <span id="creditBalanceText" style="color:var(--brand-cyan); font-size:12px;">2500 cr</span>
+            </div>
+            <div style="color:var(--text-muted); font-size:11.5px; margin-top:4px;">Click to top up or add BYOK</div>
+          </div>
+        </div>
+      </aside>
+
+      <main id="mainStage" class="main-stage"></main>
+    </div>
+  </div>
+
+  <!-- Right Queue Drawer -->
+  <aside id="queueDrawer" class="queue-drawer" aria-label="Generation Queue">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+      <h3 style="margin:0; font-family:var(--font-display); font-size:18px;">Generation Queue</h3>
+      <button id="closeQueueBtn" class="btn-secondary btn-sm">Close</button>
+    </div>
+    <div id="queueContents"></div>
+  </aside>
+
+  <!-- General Modal -->
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div id="modalBox" class="modal-box"></div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toastWrap" class="toast-wrap"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

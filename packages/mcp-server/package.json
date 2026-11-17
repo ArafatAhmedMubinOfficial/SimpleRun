@@ -1,0 +1,14 @@
+{
+  "name": "@simpletun/mcp",
+  "version": "1.0.0",
+  "description": "Open-source MCP server for SimpleTun (clean-room compatible with SimpliGen MCP)",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.js",
+  "bin": {
+    "simpletun-mcp": "src/bin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,19 @@
+# Dependencies & builds
+node_modules/
+dist/
+out/
+
+# Local runtime state, uploads, generated media, weights & embedded ComfyUI
+data/
+models/
+
+# Generated REA forensic evidence & scraped targets (regenerable via npm run rea:analyze / npm run rea:audit)
+rea-evidence/
+
+# OS & editor clutter
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.env
+.env.*
