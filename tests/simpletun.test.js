@@ -244,6 +244,20 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       const okRemote = await rawHttpGet(openRemoteSrv.port, "/health", { Host: "192.168.1.55:48199" });
       assert.equal(okRemote.status, 200);
       assert.equal(okRemote.body.ok, true);
+
+      // Verify sub-path proxy support (/proxy/48199/...) and relative asset references
+      const htmlRes = await fetch(`${openRemoteSrv.url}/proxy/48199/`);
+      assert.equal(htmlRes.status, 200);
+      const htmlBody = await htmlRes.text();
+      assert.match(htmlBody, /href="\.\/styles\.css"/);
+      assert.match(htmlBody, /src="\.\/app\.js"/);
+
+      const cssProxyRes = await fetch(`${openRemoteSrv.url}/proxy/48199/styles.css`);
+      assert.equal(cssProxyRes.status, 200);
+      const bootProxyRes = await fetch(`${openRemoteSrv.url}/proxy/48199/api/ui/bootstrap`, {
+        headers: { "X-SimpleTun-UI": "1" },
+      });
+      assert.equal(bootProxyRes.status, 200);
     } finally {
       openRemoteSrv.server.closeAllConnections?.();
       openRemoteSrv.server.close();

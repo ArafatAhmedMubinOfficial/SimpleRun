@@ -2,7 +2,7 @@
 // Video Studio (Timeline, Tempo/Bars, Cast, Shots, Takes, Export, Undo/Redo),
 // Product Studio, UGC Studio, Recipe Editor (Flows), and Connect Agent (MCP).
 
-import { uiState, api, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
 
 export async function renderVideoStudio(stage, refreshAll) {
   const films = uiState.bootstrap?.films || [];
@@ -228,13 +228,13 @@ export async function renderVideoStudio(stage, refreshAll) {
           ${film.lastExportUrl ? `
             <div style="margin-bottom:14px;">
               <span class="tag green" style="margin-bottom:6px;">Final Exported Film Ready</span>
-              <video src="${esc(film.lastExportUrl)}" controls playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
+              <video src="${esc(appUrl(film.lastExportUrl))}" controls playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
               <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Saved to <code>${esc(film.lastExportPath)}</code></div>
             </div>
           ` : selectedClip?.resultUrl ? `
             <div>
               <span class="tag cyan" style="margin-bottom:6px;">Clip #${selectedClip.number} Active Take</span>
-              <video src="${esc(selectedClip.resultUrl)}" poster="${esc(selectedClip.posterUrl || "")}" controls muted playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
+              <video src="${esc(appUrl(selectedClip.resultUrl))}" poster="${esc(appUrl(selectedClip.posterUrl || ""))}" controls muted playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
             </div>
           ` : `
             <div style="aspect-ratio:16/9; border-radius:12px; background:#090b10; border:1px dashed var(--border-emphasis); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:13px;">
@@ -440,7 +440,7 @@ export function renderProductOrUgcStudio(stage, category, refreshAll) {
         <div style="display:flex; gap:12px; flex-wrap:wrap;">
           ${products.map((p) => `
             <div style="display:flex; align-items:center; gap:10px; border:1px solid var(--border-subtle); padding:8px 12px; border-radius:12px;">
-              <img src="${esc(p.imageUrl)}" style="width:42px; height:42px; border-radius:8px; object-fit:cover;" />
+              <img src="${esc(appUrl(p.imageUrl))}" style="width:42px; height:42px; border-radius:8px; object-fit:cover;" />
               <div>
                 <div style="font-weight:700; font-size:13px;">${esc(p.name)}</div>
                 <div style="font-size:11.5px; color:var(--text-secondary);">${esc(p.description.slice(0, 40))}</div>

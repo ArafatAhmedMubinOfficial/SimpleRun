@@ -38,8 +38,19 @@ export const uiState = {
   },
 };
 
+export const BASE_PATH = (() => {
+  const clean = window.location.pathname.replace(/\/(landing|gpu-check|docs|pricing|video-studio)\/?$/, "/");
+  return clean.endsWith("/") ? clean.slice(0, -1) : clean;
+})();
+
+export function appUrl(p) {
+  if (!p) return "";
+  if (/^https?:\/\//i.test(p) || p.startsWith("data:") || p.startsWith("blob:")) return p;
+  return p.startsWith("/") ? `${BASE_PATH}${p}` : `${BASE_PATH}/${p}`;
+}
+
 export async function api(path, opts = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(appUrl(path), {
     method: opts.method || "GET",
     headers: {
       "Content-Type": "application/json",

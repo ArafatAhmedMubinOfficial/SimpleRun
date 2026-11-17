@@ -1,7 +1,7 @@
 // public/app.js
 // Main frontend router, bootstrapper, Queue Drawer, System Strip popovers, and Ctrl+Z binding.
 
-import { uiState, api, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, toast, openModal, closeModal, esc } from "./api.js";
 import {
   renderPromptBuilder,
   renderCharacters,
@@ -51,8 +51,8 @@ function renderQueueDrawer() {
       ${j.status === "completed" && j.resultUrl ? `
         <div style="margin-top:8px;">
           ${j.mediaType === "video"
-            ? `<video src="${esc(j.resultUrl)}" poster="${esc(j.posterUrl || "")}" controls muted playsinline class="media-thumb"></video>`
-            : `<img src="${esc(j.resultUrl)}" class="media-thumb" alt="" />`}
+            ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
+            : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="" />`}
         </div>
       ` : ""}
       ${j.errorMessage ? `<div style="color:#fda4af; font-size:12px; margin-top:6px;">${esc(j.errorMessage)}</div>` : ""}
@@ -360,10 +360,10 @@ function wireGlobalEvents() {
 async function init() {
   wireGlobalEvents();
   const path = location.pathname;
-  if (path === "/landing") uiState.mode = "landing";
-  else if (path === "/gpu-check") uiState.mode = "gpu-check";
-  else if (path === "/docs") uiState.mode = "docs";
-  else if (path === "/video-studio") uiState.mode = "video-studio";
+  if (/(?:^|\/)landing\/?$/.test(path)) uiState.mode = "landing";
+  else if (/(?:^|\/)gpu-check\/?$/.test(path)) uiState.mode = "gpu-check";
+  else if (/(?:^|\/)docs\/?$/.test(path)) uiState.mode = "docs";
+  else if (/(?:^|\/)video-studio\/?$/.test(path)) uiState.mode = "video-studio";
 
   await refreshAll();
 

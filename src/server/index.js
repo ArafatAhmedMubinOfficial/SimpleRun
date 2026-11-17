@@ -203,7 +203,9 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
 
       const safeHost = req.headers.host || "127.0.0.1";
       const url = new URL(req.url || "/", `http://${safeHost}`);
-      const pathname = decodeURIComponent(url.pathname);
+      let pathname = decodeURIComponent(url.pathname);
+      // Support sub-path reverse proxies (e.g. /proxy/48199/...) even if they do not strip the prefix
+      pathname = pathname.replace(/^\/proxy\/\d+(?=\/|$)/, "") || "/";
       const method = req.method || "GET";
 
       // Static frontend & media routes (no Bearer auth needed for browser UI assets)

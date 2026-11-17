@@ -1,7 +1,7 @@
 // public/views-generate.js
 // Prompt Builder (3-step wizard), Character Studio, Enhancer, Gallery, Preset Store, Model Manager.
 
-import { uiState, api, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
 
 function getCaps() {
   return uiState.bootstrap?.capabilities || [];
@@ -454,7 +454,7 @@ export function renderCharacters(stage, refreshAll) {
           ${chars.map((c) => `
             <div class="preset-card ${active?.id === c.id ? "selected" : ""}" data-sel-char="${esc(c.id)}" style="margin-bottom:10px; padding:10px; flex-direction:row; align-items:center;">
               <div style="display:flex; align-items:center; gap:10px;">
-                <img src="${esc(c.base_image_url || "")}" alt="" style="width:44px; height:44px; border-radius:9px; object-fit:cover; background:#111;" />
+                <img src="${esc(appUrl(c.base_image_url || ""))}" alt="" style="width:44px; height:44px; border-radius:9px; object-fit:cover; background:#111;" />
                 <div>
                   <div style="font-weight:700; color:#fff;">${esc(c.name)}</div>
                   <div style="font-size:11.5px; color:var(--text-secondary);">${esc(c.gender)} · ${c.generations?.length || 0} assets</div>
@@ -468,7 +468,7 @@ export function renderCharacters(stage, refreshAll) {
           <div class="card-elevated">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:18px;">
               <div style="display:flex; gap:16px; align-items:center;">
-                <img src="${esc(active.base_image_url || "")}" alt="${esc(active.name)}" style="width:96px; height:120px; border-radius:12px; object-fit:cover; border:1px solid var(--border-emphasis); background:#000;" />
+                <img src="${esc(appUrl(active.base_image_url || ""))}" alt="${esc(active.name)}" style="width:96px; height:120px; border-radius:12px; object-fit:cover; border:1px solid var(--border-emphasis); background:#000;" />
                 <div>
                   <h2 style="margin:0 0 6px; font-family:var(--font-display);">${esc(active.name)}</h2>
                   <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
@@ -518,8 +518,8 @@ export function renderCharacters(stage, refreshAll) {
                 return `
                   <div class="card" style="padding:10px;">
                     ${j.mediaType === "video"
-                      ? `<video src="${esc(j.resultUrl)}" poster="${esc(j.posterUrl || "")}" controls muted playsinline class="media-thumb"></video>`
-                      : `<img src="${esc(j.resultUrl)}" class="media-thumb" alt="${esc(j.prompt)}" />`}
+                      ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
+                      : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" />`}
                     <div style="font-size:12px; color:var(--text-secondary); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(j.prompt)}</div>
                     <div style="display:flex; gap:6px; margin-top:8px;">
                       <button class="btn-secondary btn-sm" data-enh-job="${esc(j.jobId)}">✨ Enhance</button>
@@ -678,8 +678,8 @@ export function renderGallery(stage, refreshAll) {
         ${jobs.map((j) => `
           <div class="card" style="padding:12px;">
             ${j.mediaType === "video"
-              ? `<video src="${esc(j.resultUrl)}" poster="${esc(j.posterUrl || "")}" controls muted playsinline class="media-thumb"></video>`
-              : `<img src="${esc(j.resultUrl)}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
+              ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
+              : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; flex-wrap:wrap;">
               <span class="tag cyan">${esc(j.presetId)}</span>
               <span class="tag">${esc(j.engineUsed || j.backend)}</span>
@@ -687,7 +687,7 @@ export function renderGallery(stage, refreshAll) {
             <div style="font-size:12.5px; color:var(--text-primary); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(j.prompt)}</div>
             <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
               <button class="btn-secondary btn-sm" data-reuse-seed="${esc(j.seed)}">Seed: ${esc(j.seed)}</button>
-              <a class="btn-secondary btn-sm" href="${esc(j.resultUrl)}" download style="text-decoration:none;">⬇ Save</a>
+              <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none;">⬇ Save</a>
             </div>
           </div>
         `).join("")}
@@ -712,7 +712,7 @@ export function renderGallery(stage, refreshAll) {
           <h3 style="margin:0; font-family:var(--font-display);">${esc(j.presetId)} · Seed ${esc(j.seed)}</h3>
           <button class="btn-secondary btn-sm" id="closeLb">Close</button>
         </div>
-        <img src="${esc(j.resultUrl)}" style="width:100%; border-radius:12px; display:block;" />
+        <img src="${esc(appUrl(j.resultUrl))}" style="width:100%; border-radius:12px; display:block;" />
         <p style="color:var(--text-secondary); font-size:13px; margin-top:10px;"><strong>Prompt:</strong> ${esc(j.prompt)}</p>
         <p style="color:var(--text-muted); font-size:12px;"><strong>Execution Engine:</strong> <code>${esc(j.engineUsed || j.backend)}</code> · <strong>File:</strong> <code>${esc(j.resultPath)}</code></p>
       `);
