@@ -20,6 +20,7 @@ import {
   scanModelsDirectory,
   scanLorasDirectory,
   deletePhysicalModelFile,
+  verifySafetensorsComplete,
   ModelDownloadManager,
 } from "./model-manager.js";
 import { ComfyEngineManager } from "./comfy-engine.js";
@@ -325,7 +326,11 @@ export class SimpleTunStore {
   getCapabilities() {
     const modelsRoot = this.state.settings.modelsDir || this.modelsDir;
     const scanned = scanModelsDirectory(modelsRoot, this.state.packs, CAPABILITIES);
-    const presentFilenames = new Set(scanned.files.map((f) => f.filename));
+    const presentFilenames = new Set(
+      scanned.files
+        .filter((f) => !f.safetensors || f.safetensors.complete)
+        .map((f) => f.filename)
+    );
     const installedPacks = new Set(this.state.packs.filter((p) => p.installed).map((p) => p.packId));
 
     return CAPABILITIES.map((c) => {
@@ -375,7 +380,20 @@ export class SimpleTunStore {
 
     const modelsRoot = this.state.settings.modelsDir || this.modelsDir;
     const reqs = cap.requiredModels || [];
-    const missing = reqs.filter((r) => !fs.existsSync(path.join(modelsRoot, r.subfolder, r.filename)));
+    const missing = reqs.filter((r) => {
+      const full = path.join(modelsRoot, r.subfolder, r.filename);
+      if (!fs.existsSync(full)) return true;
+      if (r.filename.toLowerCase().endsWith(".safetensors") && !verifySafetensorsComplete(full).complete) {
+        // Rename corrupt/truncated file back to .part so curl/fetch can resume cleanly from existing bytes
+        try {
+          const partPath = `${full}.part`;
+          if (!fs.existsSync(partPath)) fs.renameSync(full, partPath);
+          else fs.unlinkSync(full);
+        } catch { /* ignore */ }
+        return true;
+      }
+      return false;
+    });
 
     if (missing.length === 0) {
       return { status: "already_installed", presetId, packId: cap.packId, weightsOnDisk: true };

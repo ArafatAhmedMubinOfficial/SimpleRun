@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { getDiskStats } from "./hardware.js";
@@ -34,37 +35,62 @@ export function ensureModelDirectories(modelsRoot) {
  * Reads the binary header of a .safetensors file (8-byte LE uint64 length + JSON header)
  * without loading the multi-GB tensor weights into RAM.
  */
-export function parseSafetensorsHeader(filePath) {
+export function verifySafetensorsComplete(filePath) {
   let fd;
   try {
     const stat = fs.statSync(filePath);
-    if (stat.size < 16) return null;
+    if (stat.size < 16) return { valid: false, complete: false, reason: "File smaller than safetensors header" };
     fd = fs.openSync(filePath, "r");
     const lenBuf = Buffer.alloc(8);
     fs.readSync(fd, lenBuf, 0, 8, 0);
     const headerLenBig = lenBuf.readBigUInt64LE(0);
-    if (headerLenBig <= 0n || headerLenBig > 16n * 1024n * 1024n) return null;
+    if (headerLenBig <= 0n || headerLenBig > 64n * 1024n * 1024n) {
+      return { valid: false, complete: false, reason: "Invalid safetensors header length" };
+    }
     const headerLen = Number(headerLenBig);
+    if (stat.size < 8 + headerLen) {
+      return { valid: false, complete: false, reason: "Truncated safetensors JSON header", expectedSize: 8 + headerLen, actualSize: stat.size };
+    }
     const headerBuf = Buffer.alloc(headerLen);
     const bytesRead = fs.readSync(fd, headerBuf, 0, headerLen, 8);
-    if (bytesRead !== headerLen) return null;
+    if (bytesRead !== headerLen) return { valid: false, complete: false, reason: "Short header read" };
     const parsed = JSON.parse(headerBuf.toString("utf8"));
     const metadata = parsed.__metadata__ || {};
-    const tensorKeys = Object.keys(parsed).filter((k) => k !== "__metadata__");
+    let tensorCount = 0;
+    let maxEnd = 0;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k === "__metadata__") continue;
+      tensorCount++;
+      const endOff = Array.isArray(v?.data_offsets) ? Number(v.data_offsets[1]) || 0 : 0;
+      if (endOff > maxEnd) maxEnd = endOff;
+    }
+    const expectedSize = 8 + headerLen + maxEnd;
+    const complete = stat.size >= expectedSize && tensorCount > 0;
     return {
-      tensorCount: tensorKeys.length,
+      valid: complete,
+      complete,
+      tensorCount,
+      expectedSize,
+      actualSize: stat.size,
       baseModel: metadata.ss_base_model_version || metadata.modelspec_architecture || null,
       author: metadata.ss_author || metadata.modelspec_author || null,
       triggerWords: metadata.ss_tag_frequency ? Object.keys(metadata.ss_tag_frequency).slice(0, 5).join(", ") : null,
       metadata,
+      reason: complete ? null : `Incomplete weights (${stat.size} / ${expectedSize} bytes)`,
     };
-  } catch {
-    return null;
+  } catch (err) {
+    return { valid: false, complete: false, reason: err?.message || "Corrupt safetensors header" };
   } finally {
     if (fd !== undefined) {
       try { fs.closeSync(fd); } catch { /* ignore */ }
     }
   }
+}
+
+export function parseSafetensorsHeader(filePath) {
+  const res = verifySafetensorsComplete(filePath);
+  if (typeof res.tensorCount === "number") return res;
+  return null;
 }
 
 export function scanModelsDirectory(modelsRoot, installedPacks = [], capabilities = []) {
@@ -102,11 +128,11 @@ export function scanModelsDirectory(modelsRoot, installedPacks = [], capabilitie
       totalBytes += stat.size;
       const usedByPresets = claimedBy.get(entry.name) || [];
       const inRoot = !relFolder;
+      const safetensorsCheck = ext === ".safetensors" ? verifySafetensorsComplete(fullPath) : null;
       let status = "External";
-      if (inRoot) status = "Not in a model folder";
+      if (safetensorsCheck && !safetensorsCheck.complete) status = "Corrupt / Incomplete";
+      else if (inRoot) status = "Not in a model folder";
       else if (usedByPresets.length > 0) status = "Managed";
-
-      const safetensorsInfo = ext === ".safetensors" ? parseSafetensorsHeader(fullPath) : null;
 
       files.push({
         filename: entry.name,
@@ -118,8 +144,14 @@ export function scanModelsDirectory(modelsRoot, installedPacks = [], capabilitie
         sizeMb: Number((stat.size / (1024 ** 2)).toFixed(1)),
         usedByPresets,
         status,
-        safetensors: safetensorsInfo
-          ? { tensorCount: safetensorsInfo.tensorCount, baseModel: safetensorsInfo.baseModel }
+        safetensors: safetensorsCheck
+          ? {
+              tensorCount: safetensorsCheck.tensorCount ?? 0,
+              baseModel: safetensorsCheck.baseModel || null,
+              complete: Boolean(safetensorsCheck.complete),
+              expectedSize: safetensorsCheck.expectedSize || null,
+              reason: safetensorsCheck.reason || null,
+            }
           : null,
         modifiedAt: stat.mtime.toISOString(),
       });
@@ -222,68 +254,151 @@ export class ModelDownloadManager {
     if (authToken) {
       headers.Authorization = `Bearer ${authToken}`;
     }
-    if (existingBytes > 0) {
-      headers.Range = `bytes=${existingBytes}-`;
-    }
 
-    const ac = new AbortController();
-    let stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
-    const resetStall = () => {
-      clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
-    };
-
+    // 1. Pre-flight HEAD check for auth status and exact Content-Length
     try {
-      const res = await fetch(url, { headers, redirect: "follow", signal: ac.signal });
-      resetStall();
-      if (res.status === 401 || res.status === 403) {
+      const headRes = await fetch(url, { method: "HEAD", headers, redirect: "follow" });
+      if (headRes.status === 401 || headRes.status === 403) {
         record.status = "failed";
         record.error = kind === "huggingface"
           ? "gated_model_auth_required: Enter a valid HuggingFace Read token in Model Manager and accept the model license on huggingface.co."
           : "civitai_auth_required: Enter your Civitai API key in Model Manager.";
         throw Object.assign(new Error(record.error), { status: 401, errorCode: "download_auth_required" });
       }
-      if (res.status === 416) {
-        // Range not satisfiable; restart from 0
-        existingBytes = 0;
-        if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
-        clearTimeout(stallTimer);
-        return this.downloadFile({ id, url, destPath, authToken, kind });
-      }
-      if (!res.ok) {
-        record.status = "failed";
-        record.error = `HTTP ${res.status} ${res.statusText}`;
-        throw new Error(record.error);
-      }
+      const headLen = Number(headRes.headers.get("content-length") || 0);
+      if (headLen > 0) record.totalBytes = headLen;
+    } catch (err) {
+      if (err?.status === 401) throw err;
+    }
 
-      const contentLen = Number(res.headers.get("content-length") || 0);
-      const isResume = res.status === 206;
-      if (!isResume) existingBytes = 0;
-      record.totalBytes = contentLen > 0 ? existingBytes + contentLen : null;
-
-      const writeStream = fs.createWriteStream(partPath, { flags: isResume ? "a" : "w" });
-      const reader = Readable.fromWeb(res.body);
+    // 2. Prefer curl -4 -C - --retry 5 for multi-GB HuggingFace CDN downloads (fast, resumable, zero Node stream drop)
+    const curlSucceeded = await new Promise((resolve) => {
+      const curlArgs = ["-4", "-fSL", "-C", "-", "--retry", "5", "--retry-delay", "3", "--connect-timeout", "15", "--speed-time", "30", "--speed-limit", "1024", "-o", partPath];
+      if (authToken) curlArgs.push("-H", `Authorization: Bearer ${authToken}`);
+      curlArgs.push(url);
+      let proc;
+      try {
+        proc = spawn("curl", curlArgs, { windowsHide: true });
+      } catch {
+        return resolve(false);
+      }
       let lastTick = Date.now();
       let lastBytes = existingBytes;
+      const poll = setInterval(() => {
+        try {
+          if (fs.existsSync(partPath)) {
+            const sz = fs.statSync(partPath).size;
+            record.bytesDownloaded = sz;
+            record.downloadedMb = Number((sz / (1024 * 1024)).toFixed(1));
+            if (record.totalBytes) {
+              record.percent = Math.min(99, Math.round((sz / record.totalBytes) * 100));
+            }
+            const dt = (Date.now() - lastTick) / 1000;
+            if (dt >= 0.5) {
+              record.speedMbps = Number((((sz - lastBytes) * 8) / (dt * 1_000_000)).toFixed(2));
+              lastTick = Date.now();
+              lastBytes = sz;
+            }
+          }
+        } catch {
+          // ignore stat race
+        }
+      }, 450);
 
-      reader.on("data", (chunk) => {
-        resetStall();
-        record.bytesDownloaded += chunk.length;
-        record.downloadedMb = Number((record.bytesDownloaded / (1024 * 1024)).toFixed(1));
-        if (record.totalBytes) {
-          record.percent = Math.min(100, Math.round((record.bytesDownloaded / record.totalBytes) * 100));
-        }
-        const now = Date.now();
-        const dt = (now - lastTick) / 1000;
-        if (dt >= 0.4) {
-          const mbps = ((record.bytesDownloaded - lastBytes) * 8) / (dt * 1_000_000);
-          record.speedMbps = Number(mbps.toFixed(2));
-          lastTick = now;
-          lastBytes = record.bytesDownloaded;
-        }
+      proc.on("error", () => {
+        clearInterval(poll);
+        resolve(false);
       });
+      proc.on("close", (code) => {
+        clearInterval(poll);
+        resolve(code === 0 && fs.existsSync(partPath));
+      });
+    });
 
-      await pipeline(reader, writeStream);
+    if (!curlSucceeded) {
+      existingBytes = fs.existsSync(partPath) ? fs.statSync(partPath).size : 0;
+      if (existingBytes > 0) headers.Range = `bytes=${existingBytes}-`;
+
+      const ac = new AbortController();
+      let stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
+      const resetStall = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => ac.abort(new Error("Model download stalled (>45s no data)")), 45000);
+      };
+
+      try {
+        const res = await fetch(url, { headers, redirect: "follow", signal: ac.signal });
+        resetStall();
+        if (res.status === 401 || res.status === 403) {
+          record.status = "failed";
+          record.error = kind === "huggingface"
+            ? "gated_model_auth_required: Enter a valid HuggingFace Read token in Model Manager and accept the model license on huggingface.co."
+            : "civitai_auth_required: Enter your Civitai API key in Model Manager.";
+          throw Object.assign(new Error(record.error), { status: 401, errorCode: "download_auth_required" });
+        }
+        if (res.status === 416) {
+          existingBytes = 0;
+          if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
+          clearTimeout(stallTimer);
+          return this.downloadFile({ id, url, destPath, authToken, kind });
+        }
+        if (!res.ok) {
+          record.status = "failed";
+          record.error = `HTTP ${res.status} ${res.statusText}`;
+          throw new Error(record.error);
+        }
+
+        const contentLen = Number(res.headers.get("content-length") || 0);
+        const isResume = res.status === 206;
+        if (!isResume) existingBytes = 0;
+        if (contentLen > 0) record.totalBytes = existingBytes + contentLen;
+
+        const writeStream = fs.createWriteStream(partPath, { flags: isResume ? "a" : "w" });
+        const reader = Readable.fromWeb(res.body);
+        let lastTick = Date.now();
+        let lastBytes = existingBytes;
+
+        reader.on("data", (chunk) => {
+          resetStall();
+          record.bytesDownloaded += chunk.length;
+          record.downloadedMb = Number((record.bytesDownloaded / (1024 * 1024)).toFixed(1));
+          if (record.totalBytes) {
+            record.percent = Math.min(99, Math.round((record.bytesDownloaded / record.totalBytes) * 100));
+          }
+          const now = Date.now();
+          const dt = (now - lastTick) / 1000;
+          if (dt >= 0.4) {
+            const mbps = ((record.bytesDownloaded - lastBytes) * 8) / (dt * 1_000_000);
+            record.speedMbps = Number(mbps.toFixed(2));
+            lastTick = now;
+            lastBytes = record.bytesDownloaded;
+          }
+        });
+
+        await pipeline(reader, writeStream);
+      } catch (err) {
+        record.status = "failed";
+        record.error = err.message;
+        throw err;
+      } finally {
+        clearTimeout(stallTimer);
+      }
+    }
+
+    // 3. Strict integrity verification BEFORE promoting .part -> final weight file
+    try {
+      const finalSize = fs.existsSync(partPath) ? fs.statSync(partPath).size : 0;
+      record.bytesDownloaded = finalSize;
+      record.downloadedMb = Number((finalSize / (1024 * 1024)).toFixed(1));
+      if (record.totalBytes && finalSize < record.totalBytes) {
+        throw new Error(`Incomplete download (${finalSize} of ${record.totalBytes} bytes). Click Download again to resume.`);
+      }
+      if (destPath.toLowerCase().endsWith(".safetensors")) {
+        const check = verifySafetensorsComplete(partPath);
+        if (!check.complete) {
+          throw new Error(`Corrupt/truncated safetensors (${check.reason || "header check failed"}). Click Download again to resume.`);
+        }
+      }
       fs.renameSync(partPath, destPath);
       record.status = "completed";
       record.percent = 100;
@@ -293,8 +408,6 @@ export class ModelDownloadManager {
       record.status = "failed";
       record.error = err.message;
       throw err;
-    } finally {
-      clearTimeout(stallTimer);
     }
   }
 }

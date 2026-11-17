@@ -990,8 +990,9 @@ export function renderModelManager(stage, refreshAll) {
               <div style="font-weight:700; font-size:13px; color:#fff;">${esc(f.relativePath || f.filename)}</div>
               <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
                 <span class="tag">${esc(f.folder)}/ · ${f.sizeGb > 0 ? `${f.sizeGb} GB` : `${f.sizeMb} MB`}</span>
-                <span class="tag ${f.status === "Managed" ? "green" : "amber"}">${esc(f.status)}</span>
+                <span class="tag ${f.status === "Managed" ? "green" : f.status === "Corrupt / Incomplete" ? "red" : "amber"}">${esc(f.status)}</span>
                 ${f.safetensors ? `<span class="tag purple">${f.safetensors.tensorCount} tensors${f.safetensors.baseModel && f.safetensors.baseModel !== "unknown" ? ` · ${esc(f.safetensors.baseModel)}` : ""}</span>` : ""}
+                ${f.safetensors?.reason ? `<span class="tag amber">${esc(f.safetensors.reason)}</span>` : ""}
                 ${f.usedByPresets.map((p) => `<span class="tag cyan">${esc(p)}</span>`).join("")}
               </div>
             </div>

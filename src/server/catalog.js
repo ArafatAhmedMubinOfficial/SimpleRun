@@ -1014,79 +1014,78 @@ export const CAPABILITIES = [
 ];
 
 // Real model repository metadata, ComfyUI workflow architecture, and HuggingFace inference IDs
+// Note: Comfy-Org flux1-*-fp8 & SDXL Turbo / Juggernaut-XL checkpoints bundle UNET + CLIP + VAE together for CheckpointLoaderSimple.
 export const PRESET_MODEL_SPECS = {
   "z-image-turbo": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "Tongyi-MAI/Z-Image-Turbo",
+    sampler: "euler_ancestral",
+    scheduler: "normal",
+    hfInferenceModel: "stabilityai/sdxl-turbo",
     requiredModels: [
-      { filename: "z_image_turbo_bf16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors", sizeGb: 6.1 },
+      { filename: "sd_xl_turbo_1.0_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors", sizeGb: 6.46 },
     ],
   },
   "z-image-pro": {
     workflowArch: "checkpoint-t2i",
     sampler: "dpmpp_2m",
     scheduler: "karras",
-    hfInferenceModel: "Tongyi-MAI/Z-Image-Turbo",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "z_image_turbo_bf16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors", sizeGb: 6.1 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "flux-2-dev": {
-    workflowArch: "flux-unet",
+    workflowArch: "checkpoint-t2i",
     sampler: "euler",
     scheduler: "simple",
     hfInferenceModel: "black-forest-labs/FLUX.1-dev",
     requiredModels: [
-      { filename: "flux1-dev-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors", sizeGb: 11.9 },
-      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.9 },
-      { filename: "ae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors", sizeGb: 0.34 },
+      { filename: "flux1-dev-fp8.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors", sizeGb: 16.06 },
     ],
   },
   "flux-klein": {
-    workflowArch: "flux-unet",
+    workflowArch: "checkpoint-t2i",
     sampler: "euler",
     scheduler: "simple",
     hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "flux1-schnell-fp8.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 16.05 },
     ],
   },
   "flux-klein-edit": {
-    workflowArch: "flux-unet",
+    workflowArch: "checkpoint-t2i",
     sampler: "euler",
     scheduler: "simple",
     hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "flux1-schnell-fp8.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 16.05 },
     ],
   },
   "krea2-turbo": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler",
+    sampler: "euler_ancestral",
     scheduler: "normal",
-    hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
+    hfInferenceModel: "stabilityai/sdxl-turbo",
     requiredModels: [
-      { filename: "flux1-krea-dev_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/FLUX.1-Krea-dev_ComfyUI/resolve/main/split_files/diffusion_models/flux1-krea-dev_fp8_scaled.safetensors", sizeGb: 11.9 },
+      { filename: "sd_xl_turbo_1.0_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors", sizeGb: 6.46 },
     ],
   },
   "qwen-image-21": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "Qwen/Qwen-Image",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "qwen_image_fp8_e4m3fn.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors", sizeGb: 20.4 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "qwen-image-21-edit": {
     workflowArch: "checkpoint-t2i",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "Qwen/Qwen-Image",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "qwen_image_edit_fp8_e4m3fn.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_fp8_e4m3fn.safetensors", sizeGb: 20.4 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "wan-2.2-t2v": {
@@ -1094,9 +1093,9 @@ export const PRESET_MODEL_SPECS = {
     sampler: "uni_pc",
     scheduler: "simple",
     requiredModels: [
-      { filename: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 14.3 },
-      { filename: "umt5_xxl_fp8_e4m3fn_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", sizeGb: 6.7 },
-      { filename: "wan_2.1_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", sizeGb: 0.25 },
+      { filename: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 13.31 },
+      { filename: "umt5_xxl_fp8_e4m3fn_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", sizeGb: 6.27 },
+      { filename: "wan_2.1_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", sizeGb: 0.24 },
     ],
   },
   "wan-2.2-i2v": {
@@ -1104,9 +1103,9 @@ export const PRESET_MODEL_SPECS = {
     sampler: "uni_pc",
     scheduler: "simple",
     requiredModels: [
-      { filename: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 14.3 },
-      { filename: "umt5_xxl_fp8_e4m3fn_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", sizeGb: 6.7 },
-      { filename: "wan_2.1_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", sizeGb: 0.25 },
+      { filename: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 13.31 },
+      { filename: "umt5_xxl_fp8_e4m3fn_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", sizeGb: 6.27 },
+      { filename: "wan_2.1_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", sizeGb: 0.24 },
     ],
   },
   "wan-2.2-animate": {
@@ -1114,7 +1113,9 @@ export const PRESET_MODEL_SPECS = {
     sampler: "uni_pc",
     scheduler: "simple",
     requiredModels: [
-      { filename: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 14.3 },
+      { filename: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 13.31 },
+      { filename: "umt5_xxl_fp8_e4m3fn_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", sizeGb: 6.27 },
+      { filename: "wan_2.1_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", sizeGb: 0.24 },
     ],
   },
   "ltx-2.3-video": {
@@ -1122,7 +1123,8 @@ export const PRESET_MODEL_SPECS = {
     sampler: "euler",
     scheduler: "normal",
     requiredModels: [
-      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.1 },
+      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.91 },
+      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.56 },
     ],
   },
   "ltx-2.5-video": {
@@ -1130,7 +1132,8 @@ export const PRESET_MODEL_SPECS = {
     sampler: "euler",
     scheduler: "normal",
     requiredModels: [
-      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.1 },
+      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.91 },
+      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.56 },
     ],
   },
   "ltx-2.5-multi-ref": {
@@ -1138,38 +1141,41 @@ export const PRESET_MODEL_SPECS = {
     sampler: "euler",
     scheduler: "normal",
     requiredModels: [
-      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.1 },
+      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.91 },
+      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.56 },
     ],
   },
   "minimax-h3-video": {
-    workflowArch: "wan-video",
+    workflowArch: "ltx-video",
     sampler: "euler",
-    scheduler: "simple",
+    scheduler: "normal",
     requiredModels: [
-      { filename: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 14.3 },
+      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.91 },
+      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.56 },
     ],
   },
   "minimax-h3-image": {
-    workflowArch: "flux-unet",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "black-forest-labs/FLUX.1-dev",
+    workflowArch: "checkpoint-t2i",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "flux1-dev-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "minimax-h3-swap": {
-    workflowArch: "flux-unet",
-    sampler: "euler",
-    scheduler: "simple",
+    workflowArch: "checkpoint-t2i",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "flux1-dev-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "rtx-upscaler": {
     workflowArch: "upscale",
     requiredModels: [
-      { filename: "RealESRGAN_x2plus.pth", subfolder: "upscale_models", url: "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/main/RealESRGAN_x2.pth", sizeGb: 0.067 },
+      { filename: "RealESRGAN_x2.pth", subfolder: "upscale_models", url: "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/main/RealESRGAN_x2.pth", sizeGb: 0.067 },
     ],
   },
   "seedvr2-balanced": {
@@ -1179,29 +1185,30 @@ export const PRESET_MODEL_SPECS = {
     ],
   },
   "char-base-photoreal": {
-    workflowArch: "flux-unet",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
+    workflowArch: "checkpoint-t2i",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "char-identity-edit": {
-    workflowArch: "flux-unet",
-    sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
+    workflowArch: "checkpoint-t2i",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 11.9 },
+      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
     ],
   },
   "char-i2v-steady": {
-    workflowArch: "wan-video",
-    sampler: "uni_pc",
-    scheduler: "simple",
+    workflowArch: "ltx-video",
+    sampler: "euler",
+    scheduler: "normal",
     requiredModels: [
-      { filename: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", sizeGb: 14.3 },
+      { filename: "ltx-video-2b-v0.9.5.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors", sizeGb: 5.91 },
+      { filename: "t5xxl_fp8_e4m3fn.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", sizeGb: 4.56 },
     ],
   },
 };

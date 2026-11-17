@@ -129,26 +129,38 @@ export function compileComfyWorkflow({
     return graph;
   }
 
-  // 2. Video generation graphs (Wan 2.2 / LTX 2.3 & 2.5)
+  // 2. Video generation graphs (Wan 2.2 split UNET vs LTX-Video all-in-one Checkpoint + T5 CLIP)
   if (arch === "wan-video" || arch === "ltx-video") {
     const fps = arch === "ltx-video" ? 24 : 16;
-    const frameCount = Math.max(17, Math.round(durationSeconds * fps / 8) * 8 + 1);
-    const graph = {
-      "1": { class_type: "UNETLoader", inputs: { unet_name: primaryModel, weight_dtype: "fp8_e4m3fn" } },
-      "2": {
+    const frameCount = Math.max(17, Math.round((durationSeconds * fps) / 8) * 8 + 1);
+    const graph = {};
+    let modelRef;
+    let vaeRef;
+    let clipRef;
+
+    if (arch === "ltx-video") {
+      graph["1"] = { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: primaryModel } };
+      graph["2"] = {
         class_type: "CLIPLoader",
-        inputs: {
-          clip_name: clipModel || (arch === "ltx-video" ? "t5xxl_fp8_e4m3fn.safetensors" : "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
-          type: arch === "ltx-video" ? "ltxv" : "wan",
-        },
-      },
-      "3": {
-        class_type: "VAELoader",
-        inputs: { vae_name: vaeModel || (arch === "ltx-video" ? "ltxv_vae.safetensors" : "wan_2.1_vae.safetensors") },
-      },
-      "4": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["2", 0] } },
-      "5": { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "flicker, blurry, distorted", clip: ["2", 0] } },
-    };
+        inputs: { clip_name: clipModel || "t5xxl_fp8_e4m3fn.safetensors", type: "ltxv" },
+      };
+      modelRef = ["1", 0];
+      vaeRef = ["1", 2];
+      clipRef = ["2", 0];
+    } else {
+      graph["1"] = { class_type: "UNETLoader", inputs: { unet_name: primaryModel, weight_dtype: "fp8_e4m3fn" } };
+      graph["2"] = {
+        class_type: "CLIPLoader",
+        inputs: { clip_name: clipModel || "umt5_xxl_fp8_e4m3fn_scaled.safetensors", type: "wan" },
+      };
+      graph["3"] = { class_type: "VAELoader", inputs: { vae_name: vaeModel || "wan_2.1_vae.safetensors" } };
+      modelRef = ["1", 0];
+      clipRef = ["2", 0];
+      vaeRef = ["3", 0];
+    }
+
+    graph["4"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
+    graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "flicker, blurry, distorted", clip: clipRef } };
 
     let latentOut;
     let posOut = ["4", 0];
@@ -161,7 +173,7 @@ export function compileComfyWorkflow({
         inputs: {
           positive: ["4", 0],
           negative: ["5", 0],
-          vae: ["3", 0],
+          vae: vaeRef,
           image: ["6", 0],
           width,
           height,
@@ -183,7 +195,7 @@ export function compileComfyWorkflow({
     graph["8"] = {
       class_type: "KSampler",
       inputs: {
-        model: ["1", 0],
+        model: modelRef,
         positive: posOut,
         negative: negOut,
         latent_image: latentOut,
@@ -195,7 +207,7 @@ export function compileComfyWorkflow({
         denoise: 1.0,
       },
     };
-    graph["9"] = { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: ["3", 0] } };
+    graph["9"] = { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: vaeRef } };
     graph["10"] = {
       class_type: "SaveAnimatedWEBP",
       inputs: { images: ["9", 0], filename_prefix: "SimpleTun_Video", fps, lossless: false, quality: 88, method: "default" },

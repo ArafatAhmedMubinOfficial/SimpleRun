@@ -10,7 +10,7 @@ import { spawn, execFileSync } from "node:child_process";
 
 import { startServer } from "../src/server/index.js";
 import { probeGpuAndSystem, parseNvidiaSmiCsv, parseNvidiaSmiList, inferCudaFromGpuName } from "../src/server/hardware.js";
-import { parseSafetensorsHeader, scanModelsDirectory, deletePhysicalModelFile } from "../src/server/model-manager.js";
+import { parseSafetensorsHeader, verifySafetensorsComplete, scanModelsDirectory, deletePhysicalModelFile } from "../src/server/model-manager.js";
 import { compileComfyWorkflow, executeComfyWorkflow, embedPngWorkflowMetadata } from "../src/server/comfy-workflows.js";
 import { ControlApiClient, createMcpServer, TOOL_NAMES } from "../packages/mcp-server/src/index.js";
 
@@ -721,30 +721,40 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.ok(["16+", "12", "8", "4-6", "unsupported"].includes(hw.tier));
 
     const modelsRoot = store.modelsDir;
-    const managedPath = path.join(modelsRoot, "checkpoints", "z_image_turbo_bf16.safetensors");
+    const managedPath = path.join(modelsRoot, "checkpoints", "sd_xl_turbo_1.0_fp16.safetensors");
     const orphanPath = path.join(modelsRoot, "checkpoints", "extra_orphan.safetensors");
     const rootMisplacedPath = path.join(modelsRoot, "misplaced.safetensors");
-    fs.writeFileSync(managedPath, buildSafetensorsBytes("z-image"));
+    const corruptPath = path.join(modelsRoot, "checkpoints", "truncated_model.safetensors");
+    fs.writeFileSync(managedPath, buildSafetensorsBytes("sdxl"));
     fs.writeFileSync(orphanPath, buildSafetensorsBytes("flux"));
     fs.writeFileSync(rootMisplacedPath, buildSafetensorsBytes("sdxl"));
+    // Write a truncated safetensors file missing its final 4 payload bytes
+    const fullBytes = buildSafetensorsBytes("sdxl");
+    fs.writeFileSync(corruptPath, fullBytes.subarray(0, fullBytes.length - 4));
 
     const header = parseSafetensorsHeader(orphanPath);
     assert.equal(header.tensorCount, 1);
     assert.equal(header.baseModel, "flux");
+    assert.equal(verifySafetensorsComplete(managedPath).complete, true);
+    assert.equal(verifySafetensorsComplete(corruptPath).complete, false);
 
     const scanned = scanModelsDirectory(modelsRoot, store.listPacks(), store.getCapabilities());
-    const managed = scanned.files.find((f) => f.filename === "z_image_turbo_bf16.safetensors");
+    const managed = scanned.files.find((f) => f.filename === "sd_xl_turbo_1.0_fp16.safetensors");
     const orphan = scanned.files.find((f) => f.filename === "extra_orphan.safetensors");
     const misplaced = scanned.files.find((f) => f.filename === "misplaced.safetensors");
+    const corrupt = scanned.files.find((f) => f.filename === "truncated_model.safetensors");
     assert.equal(managed.status, "Managed");
     assert.ok(managed.usedByPresets.includes("z-image-turbo"));
     assert.equal(orphan.status, "External");
     assert.equal(orphan.safetensors.tensorCount, 1);
     assert.equal(misplaced.status, "Not in a model folder");
+    assert.equal(corrupt.status, "Corrupt / Incomplete");
+    assert.equal(corrupt.safetensors.complete, false);
 
     const del = deletePhysicalModelFile(modelsRoot, "checkpoints/extra_orphan.safetensors");
     assert.ok(del.deleted.includes("extra_orphan.safetensors"));
     assert.equal(fs.existsSync(orphanPath), false);
+    deletePhysicalModelFile(modelsRoot, "checkpoints/truncated_model.safetensors");
 
     // Electron entrypoint & Node preflight script verification
     execFileSync(process.execPath, ["--check", path.resolve("electron/main.js")]);
@@ -841,7 +851,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
         }),
       });
 
-      // z-image-turbo weight already created above in tempRoot/models/checkpoints -> should pass preflight and fail at ComfyUI connection (no silent fallback)
+      // z-image-turbo weight (sd_xl_turbo_1.0_fp16.safetensors) already created above -> passes preflight and fails at offline ComfyUI (no silent fallback)
       const strictGen = await fetch(`${url}/generate`, {
         method: "POST",
         headers: authHeaders,
