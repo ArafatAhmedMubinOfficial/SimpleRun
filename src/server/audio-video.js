@@ -3,11 +3,114 @@
 // real ffmpeg last-frame extractor for Video Studio clip continuity, and ffmpeg film stitcher.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Converts an animated ComfyUI output (.webp/.gif) into a browser-playable H.264 .mp4
+ * and extracts its first frame as a poster PNG.
+ * Falls back to Pillow frame extraction + ffmpeg when distro ffmpeg lacks WebP ANMF decoding.
+ */
+export async function transcodeAnimatedToMp4(
+  inputPath,
+  outMp4Path,
+  posterPngPath,
+  { fps = 24, pythonBin = process.platform === "win32" ? "python" : "python3" } = {}
+) {
+  fs.mkdirSync(path.dirname(outMp4Path), { recursive: true });
+  const ext = path.extname(inputPath).toLowerCase();
+
+  // If input is already .mp4/.webm/.mov, copy/ensure output and extract poster frame
+  if (ext === ".mp4" || ext === ".webm" || ext === ".mov") {
+    if (path.resolve(inputPath) !== path.resolve(outMp4Path)) {
+      fs.copyFileSync(inputPath, outMp4Path);
+    }
+    if (posterPngPath) {
+      try {
+        await execFileAsync("ffmpeg", ["-v", "error", "-y", "-i", outMp4Path, "-frames:v", "1", posterPngPath], {
+          timeout: 15000,
+        });
+      } catch { /* ignore poster failure */ }
+    }
+    return { outPath: outMp4Path, posterPath: fs.existsSync(posterPngPath) ? posterPngPath : null };
+  }
+
+  // 1. Try direct ffmpeg decode (works cleanly on modern ffmpeg builds)
+  try {
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-v", "error", "-y", "-i", inputPath,
+        "-movflags", "+faststart",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        outMp4Path,
+      ],
+      { timeout: 60000 }
+    );
+    if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 256) {
+      if (posterPngPath) {
+        try {
+          await execFileAsync("ffmpeg", ["-v", "error", "-y", "-i", outMp4Path, "-frames:v", "1", posterPngPath], {
+            timeout: 15000,
+          });
+        } catch { /* ignore */ }
+      }
+      return { outPath: outMp4Path, posterPath: fs.existsSync(posterPngPath) ? posterPngPath : null };
+    }
+  } catch {
+    // Fall through to Pillow frame extraction when distro ffmpeg cannot demux animated WebP chunks
+  }
+
+  // 2. Reliable Pillow frame extraction -> ffmpeg x264 encode
+  const tmpFramesDir = fs.mkdtempSync(path.join(os.tmpdir(), "simpletun-webp-frames-"));
+  try {
+    const pyScript = [
+      "import sys, os",
+      "from PIL import Image, ImageSequence",
+      "src, out_dir, poster = sys.argv[1], sys.argv[2], sys.argv[3]",
+      "im = Image.open(src)",
+      "count = 0",
+      "for i, frame in enumerate(ImageSequence.Iterator(im)):",
+      "    rgb = frame.convert('RGB')",
+      "    if i == 0 and poster:",
+      "        rgb.save(poster, format='PNG')",
+      "    rgb.save(os.path.join(out_dir, f'frame_{i:05d}.png'), format='PNG')",
+      "    count += 1",
+      "if count == 0:",
+      "    raise RuntimeError('No frames in animated image')",
+    ].join("\n");
+
+    await execFileAsync(pythonBin, ["-c", pyScript, inputPath, tmpFramesDir, posterPngPath || ""], {
+      timeout: 60000,
+    });
+
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-v", "error", "-y",
+        "-framerate", String(Math.max(1, Number(fps) || 24)),
+        "-i", path.join(tmpFramesDir, "frame_%05d.png"),
+        "-movflags", "+faststart",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        outMp4Path,
+      ],
+      { timeout: 60000 }
+    );
+
+    if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 256) {
+      return { outPath: outMp4Path, posterPath: fs.existsSync(posterPngPath) ? posterPngPath : null };
+    }
+    throw new Error("Encoded MP4 file was empty.");
+  } finally {
+    fs.rmSync(tmpFramesDir, { recursive: true, force: true });
+  }
+}
 
 /**
  * Parses an uncompressed RIFF/WAVE PCM16 buffer directly in JS when available,

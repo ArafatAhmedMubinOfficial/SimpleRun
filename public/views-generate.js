@@ -1,7 +1,7 @@
 // public/views-generate.js
 // Prompt Builder (3-step wizard), Character Studio, Enhancer, Gallery, Preset Store, Model Manager.
 
-import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc, renderMediaPreview } from "./api.js";
 
 function getCaps() {
   return uiState.bootstrap?.capabilities || [];
@@ -644,9 +644,7 @@ export function renderCharacters(stage, refreshAll) {
                 if (!j || !j.resultUrl) return "";
                 return `
                   <div class="card" style="padding:10px;">
-                    ${j.mediaType === "video"
-                      ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
-                      : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" />`}
+                    ${renderMediaPreview(j.resultUrl, { poster: j.posterUrl, alt: j.prompt })}
                     <div style="font-size:12px; color:var(--text-secondary); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(j.prompt)}</div>
                     <div style="display:flex; gap:6px; margin-top:8px;">
                       <button class="btn-secondary btn-sm" data-enh-job="${esc(j.jobId)}">✨ Enhance</button>
@@ -828,9 +826,12 @@ export function renderGallery(stage, refreshAll) {
           <div class="card gallery-card">
             <div>
               <div class="gallery-media-wrap">
-                ${j.mediaType === "video"
-                  ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
-                  : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
+                ${renderMediaPreview(j.resultUrl, {
+                  poster: j.posterUrl,
+                  alt: j.prompt,
+                  style: j.mediaType === "video" && /\.(mp4|webm|mov|m4v)(\?|$)/i.test(j.resultUrl) ? "" : "cursor:pointer;",
+                  lightboxId: j.jobId,
+                })}
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; flex-wrap:wrap;">
                 <span class="tag cyan">${esc(j.presetId)}</span>
@@ -841,6 +842,7 @@ export function renderGallery(stage, refreshAll) {
             </div>
             <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
               <button class="btn-secondary btn-sm" data-remix-job="${esc(j.jobId)}" title="Load prompt, preset &amp; seed into Builder">🔄 Remix</button>
+              <button class="btn-secondary btn-sm" data-lightbox="${esc(j.jobId)}" title="Open full view">🔍 View</button>
               ${j.mediaType === "image" ? `<button class="btn-secondary btn-sm" data-upscale-job="${esc(j.jobId)}" title="Run 2x RealESRGAN crisp upscale">✨ 2× Upscale</button>` : ""}
               <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none; margin-left:auto;">⬇ Save</a>
             </div>
@@ -882,7 +884,13 @@ export function renderGallery(stage, refreshAll) {
           <h3 style="margin:0; font-family:var(--font-display);">${esc(j.presetId)} · Seed ${esc(j.seed)}</h3>
           <button class="btn-secondary btn-sm" id="closeLb">Close</button>
         </div>
-        <img src="${esc(appUrl(j.resultUrl))}" style="width:100%; border-radius:12px; display:block;" />
+        ${renderMediaPreview(j.resultUrl, {
+          poster: j.posterUrl,
+          alt: j.prompt,
+          className: "",
+          style: "width:100%; max-height:70vh; object-fit:contain; border-radius:12px; display:block; background:#000;",
+          autoplay: true,
+        })}
         <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;">
           <span class="tag cyan">${esc(j.options?.aspectRatio || "1:1")} · ${esc(j.options?.resolution || "720p")}</span>
           ${j.options?.qualityMode ? `<span class="tag purple">Pass: ${esc(j.options.qualityMode)}</span>` : ""}
@@ -893,12 +901,13 @@ export function renderGallery(stage, refreshAll) {
         <p style="color:var(--text-secondary); font-size:13px; margin-top:10px;"><strong>Prompt:</strong> ${esc(j.prompt)}</p>
         <p style="color:var(--text-muted); font-size:12px;"><strong>File:</strong> <code>${esc(j.resultPath)}</code></p>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-          <button class="btn-primary btn-sm" id="lbUpscaleBtn">✨ Upscale 2× (RealESRGAN)</button>
-          <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none;">⬇ Download Full Image</a>
+          ${j.mediaType === "image" ? `<button class="btn-primary btn-sm" id="lbUpscaleBtn">✨ Upscale 2× (RealESRGAN)</button>` : ""}
+          <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none;">⬇ Download Full Media</a>
         </div>
       `);
       document.getElementById("closeLb").onclick = closeModal;
-      document.getElementById("lbUpscaleBtn").onclick = () => { closeModal(); triggerUpscaleJob(j); };
+      const lbUp = document.getElementById("lbUpscaleBtn");
+      if (lbUp) lbUp.onclick = () => { closeModal(); triggerUpscaleJob(j); };
     };
   });
 }

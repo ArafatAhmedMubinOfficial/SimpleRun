@@ -40,7 +40,8 @@ export const uiState = {
 };
 
 export const BASE_PATH = (() => {
-  const clean = window.location.pathname.replace(/\/(landing|gpu-check|docs|pricing|video-studio)\/?$/, "/");
+  const locPath = typeof window !== "undefined" ? window.location.pathname : "/";
+  const clean = locPath.replace(/\/(landing|gpu-check|docs|pricing|video-studio)\/?$/, "/");
   return clean.endsWith("/") ? clean.slice(0, -1) : clean;
 })();
 
@@ -118,4 +119,24 @@ export function esc(str) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/**
+ * Renders an HTML preview matching the actual output container:
+ * plays .mp4/.webm/.mov inside <video>, and animated .webp/.gif or stills inside <img>.
+ */
+export function renderMediaPreview(
+  url,
+  { poster = "", alt = "", className = "media-thumb", style = "", lightboxId = "", autoplay = false } = {}
+) {
+  const cleanUrl = String(url || "");
+  const safeSrc = esc(appUrl(cleanUrl));
+  const isVideoContainer = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(cleanUrl);
+  if (isVideoContainer) {
+    const posterAttr = poster ? ` poster="${esc(appUrl(poster))}"` : "";
+    const autoAttr = autoplay ? " autoplay loop" : "";
+    return `<video src="${safeSrc}"${posterAttr} controls muted playsinline${autoAttr} preload="metadata" class="${esc(className)}"${style ? ` style="${esc(style)}"` : ""}></video>`;
+  }
+  const lbAttr = lightboxId ? ` data-lightbox="${esc(lightboxId)}"` : "";
+  return `<img src="${safeSrc}" class="${esc(className)}" alt="${esc(alt)}"${style ? ` style="${esc(style)}"` : ""}${lbAttr} />`;
 }

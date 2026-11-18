@@ -206,7 +206,7 @@ export function compileComfyWorkflow({
     }
 
     graph["4"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
-    graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "flicker, blurry, distorted", clip: clipRef } };
+    graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "", clip: clipRef } };
 
     let latentOut;
     let posOut = ["4", 0];

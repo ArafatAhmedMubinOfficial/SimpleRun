@@ -1,7 +1,7 @@
 // public/app.js
 // Main frontend router, bootstrapper, Queue Drawer, System Strip popovers, and Ctrl+Z binding.
 
-import { uiState, api, appUrl, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, toast, openModal, closeModal, esc, renderMediaPreview } from "./api.js";
 import {
   renderPromptBuilder,
   renderCharacters,
@@ -50,9 +50,7 @@ function renderQueueDrawer() {
       ` : ""}
       ${j.status === "completed" && j.resultUrl ? `
         <div style="margin-top:8px;">
-          ${j.mediaType === "video"
-            ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
-            : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="" />`}
+          ${renderMediaPreview(j.resultUrl, { poster: j.posterUrl, alt: j.prompt })}
         </div>
       ` : ""}
       ${j.errorMessage ? `<div style="color:#fda4af; font-size:12px; margin-top:6px;">${esc(j.errorMessage)}</div>` : ""}
@@ -66,7 +64,10 @@ function renderQueueDrawer() {
     </div>
     ${failed.length > 0 ? `
       <div style="margin-bottom:14px;">
-        <div style="font-size:11.5px; font-weight:800; text-transform:uppercase; color:var(--amber); margin-bottom:8px;">Needs Attention (${failed.length})</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:11.5px; font-weight:800; text-transform:uppercase; color:var(--amber);">Needs Attention (${failed.length})</span>
+          <button class="btn-secondary btn-sm" id="clearFailedJobsBtn">Clear</button>
+        </div>
         ${failed.slice(0, 5).map(renderJobRow).join("")}
       </div>
     ` : ""}
@@ -76,6 +77,13 @@ function renderQueueDrawer() {
     </div>
   `;
 
+  const clearBtn = document.getElementById("clearFailedJobsBtn");
+  if (clearBtn) {
+    clearBtn.onclick = async () => {
+      await api("/api/ui/jobs/clear-failed", { method: "POST" });
+      await refreshAll();
+    };
+  }
   contents.querySelectorAll("[data-cancel-job]").forEach((b) => {
     b.onclick = async () => {
       await api(`/jobs/${b.dataset.cancelJob}/cancel`, { method: "POST" });

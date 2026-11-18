@@ -155,13 +155,20 @@ function serveFileWithRange(req, res, filePath) {
     if (match) {
       const start = Number(match[1]);
       const end = match[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+      if (start >= stat.size || start > end) {
+        res.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+        res.end();
+        return;
+      }
       res.writeHead(206, {
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
         "Accept-Ranges": "bytes",
         "Content-Length": end - start + 1,
         "Content-Type": contentType,
       });
-      fs.createReadStream(filePath, { start, end }).pipe(res);
+      const rs = fs.createReadStream(filePath, { start, end });
+      rs.on("error", () => res.destroy());
+      rs.pipe(res);
       return;
     }
   }
@@ -171,7 +178,9 @@ function serveFileWithRange(req, res, filePath) {
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
   });
-  fs.createReadStream(filePath).pipe(res);
+  const rs = fs.createReadStream(filePath);
+  rs.on("error", () => res.destroy());
+  rs.pipe(res);
 }
 
 function loadReaEvidenceSummary() {
@@ -399,6 +408,9 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
         }
         store.save();
         return sendJson(res, 200, { ok: true, settings: store.state.settings });
+      }
+      if (method === "POST" && pathname === "/api/ui/jobs/clear-failed") {
+        return sendJson(res, 200, store.clearFailedJobs());
       }
 
       // ---- Core Control API ----

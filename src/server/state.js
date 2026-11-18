@@ -39,6 +39,7 @@ import {
   detectAudioTempo,
   extractLastFrame,
   stitchFilmWithFfmpeg,
+  transcodeAnimatedToMp4,
 } from "./audio-video.js";
 import {
   resolveDimensions,
@@ -888,7 +889,7 @@ export class SimpleTunStore {
               });
               job.workflow = workflow;
               const targetComfyOut = job.mediaType === "video" ? outPath.replace(/\.mp4$/, ".webp") : outPath;
-              await executeComfyWorkflow({
+              const execRes = await executeComfyWorkflow({
                 comfyUrl: worker.comfyUrl,
                 workflow,
                 outPath: targetComfyOut,
@@ -899,8 +900,29 @@ export class SimpleTunStore {
               });
               workerSucceeded = true;
               job.engineUsed = "comfyui";
-              job.resultPath = targetComfyOut;
-              job.resultUrl = `/media/outputs/${path.basename(targetComfyOut)}`;
+              if (job.mediaType === "video") {
+                const posterName = `${job.jobId}.poster.png`;
+                const posterPath = path.join(this.outputsDir, posterName);
+                try {
+                  job.stage = `gpu${worker.gpuIndex}:encoding_mp4`;
+                  const conv = await transcodeAnimatedToMp4(execRes.outPath, outPath, posterPath, {
+                    fps: cap.workflowArch === "ltx-video" ? 24 : 16,
+                    pythonBin: this.engineManager.getPythonBin(),
+                  });
+                  job.resultPath = conv.outPath;
+                  job.resultUrl = `/media/outputs/${path.basename(conv.outPath)}`;
+                  if (conv.posterPath) {
+                    job.posterUrl = `/media/outputs/${path.basename(conv.posterPath)}`;
+                  }
+                } catch {
+                  // Fallback cleanly if ffmpeg/Pillow isn't installed; UI plays animated .webp via <img>
+                  job.resultPath = targetComfyOut;
+                  job.resultUrl = `/media/outputs/${path.basename(targetComfyOut)}`;
+                }
+              } else {
+                job.resultPath = targetComfyOut;
+                job.resultUrl = `/media/outputs/${path.basename(targetComfyOut)}`;
+              }
             } finally {
               worker.release(workerSucceeded);
             }
@@ -997,6 +1019,13 @@ export class SimpleTunStore {
     job.completedAt = new Date().toISOString();
     this.save();
     return { jobId, status: "cancelled" };
+  }
+
+  clearFailedJobs() {
+    const before = this.state.jobs.length;
+    this.state.jobs = this.state.jobs.filter((j) => j.status !== "failed");
+    this.save();
+    return { cleared: before - this.state.jobs.length };
   }
 
   // ---- Character Studio ----

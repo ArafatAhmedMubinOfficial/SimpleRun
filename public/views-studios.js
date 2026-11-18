@@ -2,7 +2,7 @@
 // Video Studio (Timeline, Tempo/Bars, Cast, Shots, Takes, Export, Undo/Redo),
 // Product Studio, UGC Studio, Recipe Editor (Flows), and Connect Agent (MCP).
 
-import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc } from "./api.js";
+import { uiState, api, appUrl, uploadBrowserFile, toast, openModal, closeModal, esc, renderMediaPreview } from "./api.js";
 
 export async function renderVideoStudio(stage, refreshAll) {
   const films = uiState.bootstrap?.films || [];
@@ -228,13 +228,13 @@ export async function renderVideoStudio(stage, refreshAll) {
           ${film.lastExportUrl ? `
             <div style="margin-bottom:14px;">
               <span class="tag green" style="margin-bottom:6px;">Final Exported Film Ready</span>
-              <video src="${esc(appUrl(film.lastExportUrl))}" controls playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
+              ${renderMediaPreview(film.lastExportUrl, { style: "aspect-ratio:16/9;" })}
               <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Saved to <code>${esc(film.lastExportPath)}</code></div>
             </div>
           ` : selectedClip?.resultUrl ? `
             <div>
               <span class="tag cyan" style="margin-bottom:6px;">Clip #${selectedClip.number} Active Take</span>
-              <video src="${esc(appUrl(selectedClip.resultUrl))}" poster="${esc(appUrl(selectedClip.posterUrl || ""))}" controls muted playsinline class="media-thumb" style="aspect-ratio:16/9;"></video>
+              ${renderMediaPreview(selectedClip.resultUrl, { poster: selectedClip.posterUrl, style: "aspect-ratio:16/9;" })}
             </div>
           ` : `
             <div style="aspect-ratio:16/9; border-radius:12px; background:#090b10; border:1px dashed var(--border-emphasis); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:13px;">

@@ -1030,8 +1030,15 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
         body: JSON.stringify({ presetId: "realvis-xl-lightning", mediaType: "image", prompt: "uncensored raw artistic portrait" }),
       })
     ).json();
-    const rawJob = (await (await fetch(`${url}/jobs/${rawGen.jobId}`, { headers: authHeaders })).json()).job;
+    let rawJob;
+    for (let i = 0; i < 40; i++) {
+      rawJob = (await (await fetch(`${url}/jobs/${rawGen.jobId}`, { headers: authHeaders })).json()).job;
+      if (rawJob.status === "completed" || rawJob.status === "failed") break;
+      await new Promise((r) => setTimeout(r, 40));
+    }
     assert.equal(rawJob.negativePrompt, "");
+    assert.equal(rawJob.status, "completed");
+    assert.ok(rawJob.resultUrl);
 
     // 6. Delayed ComfyUI /history flush + stale WS executing:null before promptId regression test
     const raceWsClients = new Set();
@@ -1093,5 +1100,23 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       raceServer.closeAllConnections?.();
       raceServer.close();
     }
+
+    // 7. Browser media preview helper chooses <img> for .webp animations and <video> for .mp4, plus HTTP Range 206 + clear-failed
+    const { renderMediaPreview } = await import("../public/api.js");
+    const webpHtml = renderMediaPreview("/media/outputs/job_123.webp", { alt: "anim" });
+    const mp4Html = renderMediaPreview("/media/outputs/job_123.mp4", { poster: "/media/outputs/job_123.poster.png" });
+    assert.ok(webpHtml.startsWith("<img "), "Expected animated .webp to render via <img>");
+    assert.ok(mp4Html.startsWith("<video "), "Expected .mp4 to render via <video>");
+
+    const rangeRes = await fetch(`${url}${rawJob.resultUrl}`, { headers: { Range: "bytes=0-15" } });
+    assert.equal(rangeRes.status, 206);
+    assert.equal(rangeRes.headers.get("accept-ranges"), "bytes");
+    assert.equal((await rangeRes.arrayBuffer()).byteLength, 16);
+
+    const clearRes = await fetch(`${url}/api/ui/jobs/clear-failed`, {
+      method: "POST",
+      headers: { ...authHeaders, "X-SimpleTun-UI": "1" },
+    });
+    assert.equal(clearRes.status, 200);
   });
 });
