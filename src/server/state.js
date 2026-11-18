@@ -736,9 +736,11 @@ export class SimpleTunStore {
     }
 
     const negParts = [];
-    if (cap.defaultNegativePrompt) negParts.push(cap.defaultNegativePrompt);
+    if (options.usePresetDefaults && cap.defaultNegativePrompt) {
+      negParts.push(cap.defaultNegativePrompt);
+    }
     const extraNeg = negativePrompt || options.negativePrompt;
-    if (extraNeg && chosenBackend !== "cloud") negParts.push(extraNeg);
+    if (extraNeg) negParts.push(extraNeg);
 
     const jobOptions = {
       aspectRatio: options.aspectRatio || (mediaType === "video" ? "16:9" : "1:1"),
@@ -1391,7 +1393,6 @@ export class SimpleTunStore {
       name: spec?.name || "Untitled Recipe",
       description: spec?.description || "",
       category: spec?.category || "custom",
-      mature: Boolean(spec?.mature || spec?.nsfw),
       version: spec?.version || "1.0.0",
       published: false,
       priceTokens: 0,

@@ -32,6 +32,7 @@ export async function runOpenAiImageGeneration({ apiKey, prompt, aspectRatio = "
       prompt,
       size: mapAspectToOpenAiSize(aspectRatio),
       n: 1,
+      moderation: "low",
     }),
   });
 

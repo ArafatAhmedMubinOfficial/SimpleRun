@@ -1021,5 +1021,77 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     // 4. UI Bootstrap reports ComfyUI v0.45.0 target
     const boot = await (await fetch(`${url}/api/ui/bootstrap`, { headers: { ...authHeaders, "X-SimpleTun-UI": "1" } })).json();
     assert.equal(boot.engine.targetVersion, "v0.45.0");
+
+    // 5. Raw unfiltered prompt pass-through (zero hidden negative injection)
+    const rawGen = await (
+      await fetch(`${url}/generate`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ presetId: "realvis-xl-lightning", mediaType: "image", prompt: "uncensored raw artistic portrait" }),
+      })
+    ).json();
+    const rawJob = (await (await fetch(`${url}/jobs/${rawGen.jobId}`, { headers: authHeaders })).json()).job;
+    assert.equal(rawJob.negativePrompt, "");
+
+    // 6. Delayed ComfyUI /history flush + stale WS executing:null before promptId regression test
+    const raceWsClients = new Set();
+    let activePid = null;
+    let historyReadyAt = 0;
+    const raceServer = http.createServer((req, res) => {
+      const u = new URL(req.url, "http://127.0.0.1");
+      if (req.method === "POST" && u.pathname === "/prompt") {
+        activePid = "pid_delayed_1";
+        historyReadyAt = Date.now() + 260;
+        for (const s of raceWsClients) {
+          sendWsTextFrame(s, { type: "executing", data: { node: null } }); // stale idle event before prompt_id returns!
+        }
+        setTimeout(() => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ prompt_id: activePid }));
+          setTimeout(() => {
+            for (const s of raceWsClients) {
+              sendWsTextFrame(s, { type: "executed", data: { node: "30", prompt_id: activePid } });
+              sendWsTextFrame(s, { type: "executing", data: { node: null, prompt_id: activePid } });
+            }
+          }, 25);
+        }, 40);
+        return;
+      }
+      if (req.method === "GET" && u.pathname.startsWith("/history/")) {
+        const pid = u.pathname.slice("/history/".length);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        if (Date.now() < historyReadyAt) return res.end(JSON.stringify({}));
+        return res.end(JSON.stringify({ [pid]: { outputs: { "30": { images: [{ filename: "delayed.png", subfolder: "", type: "output" }] } } } }));
+      }
+      if (req.method === "GET" && u.pathname === "/queue") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ queue_running: Date.now() < historyReadyAt ? [[0, activePid]] : [], queue_pending: [] }));
+      }
+      if (req.method === "GET" && u.pathname === "/view") {
+        res.writeHead(200, { "Content-Type": "image/png" });
+        return res.end(Buffer.from(SAMPLE_PNG_BASE64, "base64"));
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    raceServer.on("upgrade", (req, socket) => {
+      const accept = crypto.createHash("sha1").update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+      raceWsClients.add(socket);
+      sendWsTextFrame(socket, { type: "executing", data: { node: null } }); // initial connect idle frame
+      socket.on("close", () => raceWsClients.delete(socket));
+      socket.on("error", () => raceWsClients.delete(socket));
+    });
+    await new Promise((r) => raceServer.listen(0, "127.0.0.1", r));
+    try {
+      const racePort = raceServer.address().port;
+      const raceOut = path.join(tempRoot, "delayed_history.png");
+      const raceRes = await executeComfyWorkflow({ comfyUrl: `http://127.0.0.1:${racePort}`, workflow: zHires, outPath: raceOut });
+      assert.ok(fs.existsSync(raceRes.outPath));
+    } finally {
+      for (const s of raceWsClients) s.destroy();
+      raceServer.closeAllConnections?.();
+      raceServer.close();
+    }
   });
 });

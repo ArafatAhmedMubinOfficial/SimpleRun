@@ -557,14 +557,45 @@ async function submitComfyPrompt(comfyUrl, workflow, clientId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: workflow, client_id: clientId }),
   });
-  const json = await res.json();
-  if (!res.ok || json.error) {
-    throw new Error(json.error?.message || `ComfyUI /prompt error (${res.status})`);
+  let json = {};
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`ComfyUI /prompt returned non-JSON response (HTTP ${res.status})`);
+  }
+  const hasNodeErrors = json.node_errors && Object.keys(json.node_errors).length > 0;
+  if (!res.ok || json.error || hasNodeErrors) {
+    const nodeErrMsgs = hasNodeErrors
+      ? Object.entries(json.node_errors)
+          .map(([nid, info]) => `Node ${nid} (${info?.class_type || "unknown"}): ${(info?.errors || []).map((e) => e.details || e.message).join("; ")}`)
+          .join(" | ")
+      : "";
+    throw new Error(nodeErrMsgs || json.error?.message || `ComfyUI /prompt error (${res.status})`);
+  }
+  if (!json.prompt_id) {
+    throw new Error("ComfyUI /prompt succeeded without returning a prompt_id.");
   }
   return json.prompt_id;
 }
 
+async function isPromptStillInComfyQueue(comfyUrl, promptId) {
+  try {
+    const qRes = await fetch(`${comfyUrl}/queue`);
+    if (!qRes.ok) return false;
+    const q = await qRes.json();
+    const inRunning = Array.isArray(q.queue_running) && q.queue_running.some((item) => item?.[1] === promptId);
+    const inPending = Array.isArray(q.queue_pending) && q.queue_pending.some((item) => item?.[1] === promptId);
+    return inRunning || inPending;
+  } catch {
+    return false;
+  }
+}
+
 async function collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath, { allowPending = false } = {}) {
+  if (!promptId) {
+    if (allowPending) return null;
+    throw new Error("Missing ComfyUI prompt_id.");
+  }
   const hRes = await fetch(`${comfyUrl}/history/${encodeURIComponent(promptId)}`);
   if (!hRes.ok) throw new Error(`Failed reading ComfyUI history: HTTP ${hRes.status}`);
   const hJson = await hRes.json();
@@ -574,7 +605,8 @@ async function collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPa
     throw new Error("ComfyUI produced no history entry.");
   }
   if (entry.status?.status_str === "error") {
-    throw new Error("ComfyUI reported an execution error.");
+    const errMsg = entry.status?.messages?.find((m) => m?.[0] === "execution_error")?.[1]?.exception_message;
+    throw new Error(errMsg || "ComfyUI reported an execution error.");
   }
   if (!entry.outputs) {
     if (allowPending) return null;
@@ -582,7 +614,7 @@ async function collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPa
   }
 
   for (const nodeOut of Object.values(entry.outputs)) {
-    const media = (nodeOut.images && nodeOut.images[0]) || (nodeOut.gifs && nodeOut.gifs[0]);
+    const media = (nodeOut.images && nodeOut.images[0]) || (nodeOut.gifs && nodeOut.gifs[0]) || (nodeOut.videos && nodeOut.videos[0]);
     if (media && media.filename) {
       const qs = new URLSearchParams({
         filename: media.filename,
@@ -633,13 +665,24 @@ export async function executeComfyWorkflow({
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let collecting = false;
     let promptId = null;
+    let pollTimer = null;
     const ws = new globalThis.WebSocket(wsUrl);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      try { ws.close(); } catch { /* ignore */ }
+    };
 
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
-        try { ws.close(); } catch { /* ignore */ }
+        cleanup();
         reject(new Error("ComfyUI execution timed out."));
       }
     }, timeoutMs);
@@ -647,23 +690,57 @@ export async function executeComfyWorkflow({
     const finishError = (err) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      try { ws.close(); } catch { /* ignore */ }
+      cleanup();
       reject(err);
     };
 
-    const collectFromHistory = async () => {
-      const result = await collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath);
+    const finishSuccess = (result) => {
+      if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      try { ws.close(); } catch { /* ignore */ }
+      cleanup();
+      onProgress(100, "completed");
       resolve(result);
+    };
+
+    // Waits cleanly for ComfyUI's PromptQueue.task_done() to commit /history/{promptId}
+    const collectFromHistory = async ({ waitForFlush = false } = {}) => {
+      if (settled || collecting || !promptId) return;
+      collecting = true;
+      try {
+        const maxAttempts = waitForFlush ? 25 : 1;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (settled) return;
+          const result = await collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath, { allowPending: true });
+          if (result) {
+            finishSuccess(result);
+            return;
+          }
+          if (!waitForFlush) return;
+          const stillQueued = await isPromptStillInComfyQueue(comfyUrl, promptId);
+          if (!stillQueued && attempt >= maxAttempts - 1) break;
+          await new Promise((r) => setTimeout(r, stillQueued ? 500 : 200));
+        }
+        if (waitForFlush && !settled) {
+          const stillQueued = await isPromptStillInComfyQueue(comfyUrl, promptId);
+          if (!stillQueued) {
+            const finalRes = await collectComfyOutputFromHistory(comfyUrl, promptId, workflow, outPath, { allowPending: false });
+            if (finalRes) finishSuccess(finalRes);
+          }
+        }
+      } catch (err) {
+        finishError(err);
+      } finally {
+        collecting = false;
+      }
     };
 
     ws.addEventListener("open", async () => {
       try {
         promptId = await submitComfyPrompt(comfyUrl, workflow, clientId);
         onProgress(10, "queued_in_comfyui");
+        pollTimer = setInterval(() => {
+          collectFromHistory({ waitForFlush: false }).catch(() => {});
+        }, 700);
       } catch (err) {
         finishError(err);
       }
@@ -671,17 +748,25 @@ export async function executeComfyWorkflow({
 
     ws.addEventListener("message", async (evt) => {
       try {
-        if (typeof evt.data !== "string") return;
+        if (typeof evt.data !== "string" || !promptId) return;
         const msg = JSON.parse(evt.data);
+        const evtPromptId = msg.data?.prompt_id;
+        if (evtPromptId && evtPromptId !== promptId) return;
+
         if (msg.type === "progress" && msg.data?.max) {
           const pct = Math.max(10, Math.min(98, Math.round((msg.data.value / msg.data.max) * 100)));
           onProgress(pct, `step ${msg.data.value}/${msg.data.max}`);
-        } else if (msg.type === "execution_error" && (!promptId || msg.data?.prompt_id === promptId)) {
+        } else if (msg.type === "execution_error" && evtPromptId === promptId) {
           finishError(new Error(msg.data?.exception_message || "ComfyUI execution_error"));
-        } else if (msg.type === "executing" && msg.data?.node === null && (!promptId || msg.data?.prompt_id === promptId)) {
-          await collectFromHistory();
-        } else if (msg.type === "executed" && (!promptId || msg.data?.prompt_id === promptId)) {
-          await collectFromHistory();
+        } else if (msg.type === "execution_interrupted" && evtPromptId === promptId) {
+          finishError(new Error("ComfyUI execution was interrupted."));
+        } else if (
+          (msg.type === "execution_success" && evtPromptId === promptId) ||
+          (msg.type === "executing" && msg.data?.node === null && evtPromptId === promptId)
+        ) {
+          await collectFromHistory({ waitForFlush: true });
+        } else if (msg.type === "executed" && evtPromptId === promptId) {
+          await collectFromHistory({ waitForFlush: false });
         }
       } catch (err) {
         finishError(err);

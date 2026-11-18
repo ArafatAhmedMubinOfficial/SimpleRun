@@ -165,8 +165,8 @@ export function renderPromptBuilder(stage, refreshAll) {
           ` : ""}
 
           <div class="field">
-            <label class="field-label"><span>Negative Prompt (What to avoid)</span><span style="font-weight:500; color:var(--text-muted);">Appended to preset default</span></label>
-            <input id="genNegInput" class="input" value="${esc(uiState.form.negativePrompt)}" placeholder="e.g. extra fingers, watermark, plastic skin" />
+            <label class="field-label"><span>Negative Prompt (Optional)</span><span style="font-weight:500; color:var(--text-muted);">Raw pass-through — zero hidden filters</span></label>
+            <input id="genNegInput" class="input" value="${esc(uiState.form.negativePrompt)}" placeholder="Leave blank for pure prompt, or list defects to avoid" />
           </div>
 
           ${selected.inputs.supportsLoras ? `

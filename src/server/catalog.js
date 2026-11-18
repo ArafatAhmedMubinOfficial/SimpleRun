@@ -1404,7 +1404,7 @@ MiniMax H3 supports up to 8 named cast members (\`@Name\`), scene chaining, and 
 - Specify framing (\`wide\`, \`medium\`, \`close-up\`) explicitly per shot.
 
 ## Negative prompts in SimpleTun
-Built-in face stability guards are active by default.`,
+Raw prompts pass straight through to local models with zero filtering or hidden rewrites.`,
   },
   "no-prompt": {
     family: "no-prompt",
@@ -1437,7 +1437,7 @@ export function getPromptGuideForPreset(presetId) {
     familyName: cap.name,
     version: 1,
     generic: true,
-    text: `# ${cap.name} Prompting Guide\n\nNo model-specific guide is declared for \`${cap.promptFamily}\`. Use clear natural-language descriptions covering subject, lighting, framing, and style.\n\n## Negative prompts in SimpleTun\nDefault quality safeguards are applied automatically.`,
+    text: `# ${cap.name} Prompting Guide\n\nNo model-specific guide is declared for \`${cap.promptFamily}\`. Use clear natural-language descriptions covering subject, lighting, framing, and style.\n\n## Negative prompts in SimpleTun\nYour prompt and negative prompt pass straight through to the local model without content filtering.`,
   };
 }
 
@@ -1595,7 +1595,6 @@ export const DEFAULT_RECIPES = [
     version: "1.2.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "product", kind: "subject", label: "Product", required: true },
       { key: "aspectRatio", kind: "select", label: "Aspect Ratio", required: false, default: "16:9", options: ["16:9", "9:16", "1:1"] },
@@ -1616,7 +1615,6 @@ export const DEFAULT_RECIPES = [
     version: "1.1.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "product", kind: "subject", label: "Product", required: true },
       { key: "liquid", kind: "text", label: "Splash Element", required: false, default: "crystal clear sparkling water droplets and ice mist" },
@@ -1636,7 +1634,6 @@ export const DEFAULT_RECIPES = [
     version: "1.0.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "product", kind: "subject", label: "Product", required: true },
       { key: "mood", kind: "text", label: "Lighting & Set", required: false, default: "warm morning sunlight casting soft architectural shadows on travertine" },
@@ -1656,7 +1653,6 @@ export const DEFAULT_RECIPES = [
     version: "1.3.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "character", kind: "subject", label: "Character", required: true },
       { key: "product", kind: "subject", label: "Product", required: true },
@@ -1678,7 +1674,6 @@ export const DEFAULT_RECIPES = [
     version: "1.2.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "character", kind: "subject", label: "Character", required: true },
       { key: "product", kind: "subject", label: "Product", required: true },
@@ -1699,7 +1694,6 @@ export const DEFAULT_RECIPES = [
     version: "1.0.0",
     published: true,
     priceTokens: 0,
-    mature: false,
     inputs: [
       { key: "character", kind: "subject", label: "Presenter", required: true },
       { key: "product", kind: "subject", label: "Product", required: true },
