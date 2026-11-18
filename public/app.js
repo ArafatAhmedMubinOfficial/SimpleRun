@@ -267,11 +267,18 @@ function wireGlobalEvents() {
           : `<div>${esc(hw.gpuName || st.gpuName || "Unknown")} (${hw.vramGb || st.vramGb || 0} GB VRAM)</div>`}
         <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--border-subtle);">
           <strong>RAM / Disk:</strong> ${hw.totalRamGb || "?"} GB RAM · ${hw.freeDiskGb || "?"} GB Free ·
-          <strong>Engine:</strong> <span id="engStatusSpan">${st.engineRunning ? `<span style="color:var(--emerald);">Running ${st.workerCount || 1} Worker(s) (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? "Installed (Stopped — click Start Engine)" : "Not Installed (click Install below)"}</span>
+          <strong>Engine:</strong> <span id="engStatusSpan">${st.engineRunning ? `<span style="color:var(--emerald);">Running ${st.workerCount || 1} Worker(s) (${esc(st.engineVersion)})</span>` : st.engineInstalling ? `<span style="color:var(--brand-cyan);">Installing / Upgrading (${esc(st.engineInstallStage)})</span>` : st.engineInstalled ? `Installed (${esc(st.engineVersion || "Stopped")})` : "Not Installed (click Install below)"}</span>
+          ${eng.targetVersion ? `<span class="tag ${st.engineNeedsUpgrade ? "amber" : "green"}" style="margin-left:6px;">${st.engineNeedsUpgrade ? `Update Available: ${esc(eng.targetVersion)}` : `Latest ${esc(eng.targetVersion)}`}</span>` : ""}
         </div>
       </div>
+      ${st.engineInstalled && st.engineNeedsUpgrade ? `
+        <div class="banner-info" style="margin-bottom:12px;">
+          <strong>ComfyUI Upgrade Recommended:</strong> Upgrade from <code>${esc(st.engineVersion)}</code> to <code>${esc(eng.targetVersion)}</code> to unlock native <strong>Z-Image-Turbo</strong>, <strong>FLUX.2 Klein 4B</strong>, <strong>Krea-2</strong>, and <strong>Qwen-Image 2.1</strong> pipelines.
+        </div>
+      ` : ""}
       <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
-        ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="engInstallBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? "Installing ComfyUI..." : "Install ComfyUI + PyTorch Engine"}</button>` : ""}
+        ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="engInstallBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? "Installing ComfyUI..." : `Install ComfyUI ${esc(eng.targetVersion || "")} + PyTorch Engine`}</button>` : ""}
+        ${st.engineInstalled && st.engineNeedsUpgrade ? `<button class="btn-primary btn-sm" id="engUpgradeBtn" ${st.engineInstalling ? "disabled" : ""}>⬆ ${st.engineInstalling ? "Upgrading..." : `Upgrade ComfyUI to ${esc(eng.targetVersion || "v0.45.0")}`}</button>` : ""}
         <button class="btn-primary btn-sm" id="engStartBtn">Start Multi-GPU Engine</button>
         <button class="btn-secondary btn-sm" id="engRestartBtn">Restart Engine</button>
         <button class="btn-danger btn-sm" id="engStopBtn">Stop All Workers (Free VRAM)</button>
@@ -310,6 +317,17 @@ function wireGlobalEvents() {
         try {
           await api("/api/ui/engine/install", { method: "POST" });
           toast("Started downloading ComfyUI & creating Python PyTorch venv...");
+          await refreshAll();
+          document.getElementById("engineSysCard").click();
+        } catch (err) { toast(err.message, true); }
+      };
+    }
+    const upgBtn = document.getElementById("engUpgradeBtn");
+    if (upgBtn) {
+      upgBtn.onclick = async () => {
+        try {
+          await api("/api/ui/engine/upgrade", { method: "POST" });
+          toast("Started upgrading ComfyUI to v0.45.0...");
           await refreshAll();
           document.getElementById("engineSysCard").click();
         } catch (err) { toast(err.message, true); }

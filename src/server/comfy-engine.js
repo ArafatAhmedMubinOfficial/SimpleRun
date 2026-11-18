@@ -12,7 +12,7 @@ import { ensureModelDirectories } from "./model-manager.js";
 
 const execFileAsync = promisify(execFile);
 
-export const COMFYUI_RELEASE_VERSION = "v0.3.14";
+export const COMFYUI_RELEASE_VERSION = "v0.45.0";
 export const COMFYUI_TARBALL_URL = `https://codeload.github.com/comfyanonymous/ComfyUI/tar.gz/refs/tags/${COMFYUI_RELEASE_VERSION}`;
 
 export class ComfyEngineManager {
@@ -66,6 +66,23 @@ export class ComfyEngineManager {
 
   isInstalled() {
     return Boolean(this.getComfyDir());
+  }
+
+  getInstalledVersion() {
+    const comfyDir = this.getComfyDir();
+    if (!comfyDir) return null;
+    try {
+      for (const rel of ["comfyui_version.py", "pyproject.toml"]) {
+        const p = path.join(comfyDir, rel);
+        if (!fs.existsSync(p)) continue;
+        const txt = fs.readFileSync(p, "utf8");
+        const m = txt.match(/(?:__version__|version)\s*=\s*["']([^"']+)["']/);
+        if (m) return m[1].startsWith("v") ? m[1] : `v${m[1]}`;
+      }
+    } catch {
+      // ignore version parse failure
+    }
+    return null;
   }
 
   async #probeSingleUrl(baseUrl) {
@@ -398,11 +415,62 @@ export class ComfyEngineManager {
 
       this.writeExtraModelPathsConfig();
       this.installStage = "installed";
-      this.log("ComfyUI engine installation complete! Click 'Start Multi-GPU Engine' to boot workers.");
-      return { status: "installed", comfyDir: comfyTarget };
+      this.log(`ComfyUI ${COMFYUI_RELEASE_VERSION} installation complete! Click 'Start Multi-GPU Engine' to boot workers.`);
+      return { status: "installed", comfyDir: comfyTarget, version: COMFYUI_RELEASE_VERSION };
     } catch (err) {
       this.installStage = `failed: ${err.message}`;
       this.log(`Install error: ${err.message}`);
+      throw err;
+    } finally {
+      this.installing = false;
+    }
+  }
+
+  async upgradeLocalEngine() {
+    if (this.installing) {
+      return { status: "already_installing", stage: this.installStage };
+    }
+    this.installing = true;
+    this.installStage = "upgrading_comfyui";
+    fs.mkdirSync(this.engineDir, { recursive: true });
+    try {
+      await this.stopEngine();
+      const comfyTarget = path.join(this.engineDir, "ComfyUI");
+      const tgzPath = path.join(this.engineDir, `ComfyUI-${COMFYUI_RELEASE_VERSION}.tar.gz`);
+
+      if (fs.existsSync(path.join(comfyTarget, ".git"))) {
+        this.log(`Upgrading existing ComfyUI git checkout to ${COMFYUI_RELEASE_VERSION}...`);
+        await this.#runLoggedCommand("git", ["fetch", "--depth", "1", "origin", "tag", COMFYUI_RELEASE_VERSION], comfyTarget, 3 * 60 * 1000);
+        await this.#runLoggedCommand("git", ["checkout", "-f", COMFYUI_RELEASE_VERSION], comfyTarget, 60 * 1000);
+      } else {
+        this.log(`Installing fresh ComfyUI ${COMFYUI_RELEASE_VERSION} (preserving custom_nodes & user folders)...`);
+        const stageDir = path.join(this.engineDir, "ComfyUI-upgrade-stage");
+        if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true, force: true });
+        await this.#downloadComfyArchive(stageDir, tgzPath);
+        if (fs.existsSync(comfyTarget)) {
+          for (const keepDir of ["custom_nodes", "input", "output", "user"]) {
+            const oldDir = path.join(comfyTarget, keepDir);
+            const dstDir = path.join(stageDir, keepDir);
+            if (fs.existsSync(oldDir) && fs.readdirSync(oldDir).length > 0) {
+              fs.cpSync(oldDir, dstDir, { recursive: true, force: false });
+            }
+          }
+          fs.rmSync(comfyTarget, { recursive: true, force: true });
+        }
+        fs.renameSync(stageDir, comfyTarget);
+      }
+
+      const pyBin = this.getPythonBin();
+      this.installStage = "installing_requirements";
+      this.log(`Syncing Python requirements for ComfyUI ${COMFYUI_RELEASE_VERSION}...`);
+      await this.#runLoggedCommand(pyBin, ["-m", "pip", "install", "--prefer-binary", "-r", "requirements.txt"], comfyTarget);
+      this.writeExtraModelPathsConfig();
+      this.installStage = "installed";
+      this.log(`Upgraded ComfyUI to ${COMFYUI_RELEASE_VERSION}! Click 'Start Multi-GPU Engine' to start workers.`);
+      return { status: "upgraded", version: COMFYUI_RELEASE_VERSION, comfyDir: comfyTarget };
+    } catch (err) {
+      this.installStage = `failed: ${err.message}`;
+      this.log(`Upgrade error: ${err.message}`);
       throw err;
     } finally {
       this.installing = false;

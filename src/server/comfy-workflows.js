@@ -93,6 +93,32 @@ export function resolveComfyPixelDims(aspectRatio = "1:1", resolution = "720p", 
   return { width: w, height: h };
 }
 
+function snap64(n) {
+  return Math.max(512, Math.round(n / 64) * 64);
+}
+
+function appendLoraChain(graph, startId, initialModelRef, initialClipRef, loras = []) {
+  let modelRef = initialModelRef;
+  let clipRef = initialClipRef;
+  let nextId = startId;
+  for (const l of loras) {
+    const id = String(nextId++);
+    graph[id] = {
+      class_type: "LoraLoader",
+      inputs: {
+        model: modelRef,
+        clip: clipRef,
+        lora_name: l.filename,
+        strength_model: l.weight ?? 0.85,
+        strength_clip: l.weight ?? 0.85,
+      },
+    };
+    modelRef = [id, 0];
+    clipRef = [id, 1];
+  }
+  return { modelRef, clipRef, nextId };
+}
+
 /**
  * Compiles a clean-room ComfyUI API prompt graph tailored to the selected preset architecture.
  */
@@ -108,6 +134,7 @@ export function compileComfyWorkflow({
   resolution = "720p",
   durationSeconds = 4,
   scale = 2,
+  qualityMode = "standard",
   keepResolution = false,
   loras = [],
   inputImageName = null,
@@ -115,12 +142,19 @@ export function compileComfyWorkflow({
   const arch = preset?.workflowArch || "checkpoint-t2i";
   const isVideo = arch === "wan-video" || arch === "ltx-video";
   const { width, height } = resolveComfyPixelDims(aspectRatio, resolution, isVideo);
-  const numSteps = Number(steps) || preset?.options?.steps?.default || 20;
-  const numCfg = Number(cfg) || preset?.options?.cfg?.default || 4.0;
-  const numSeed = Number.isFinite(Number(seed)) ? Math.abs(Math.floor(Number(seed))) : Math.floor(Math.random() * 1e9);
+  const numSteps = Number.isFinite(Number(steps)) && Number(steps) > 0 ? Number(steps) : (preset?.options?.steps?.default || 20);
+  const numCfg = Number.isFinite(Number(cfg)) && cfg !== "" && cfg !== null && cfg !== undefined ? Number(cfg) : (preset?.options?.cfg?.default ?? 4.0);
+  const numSeed = Number.isFinite(Number(seed)) && String(seed).trim() !== ""
+    ? Math.abs(Math.floor(Number(seed)))
+    : Math.floor(Math.random() * 1e9);
   const primaryModel = preset?.requiredModels?.[0]?.filename || "model.safetensors";
   const clipModel = preset?.requiredModels?.[1]?.filename || null;
   const vaeModel = preset?.requiredModels?.[2]?.filename || null;
+  const useHires = qualityMode === "hires" || qualityMode === "ultra";
+  const hiW = snap64(width * 1.5);
+  const hiH = snap64(height * 1.5);
+  const hiresDenoise = qualityMode === "ultra" ? 0.48 : 0.40;
+  const hiresSteps = Math.max(4, Math.round(numSteps * (qualityMode === "ultra" ? 0.85 : 0.65)));
 
   // 1. Upscaler / Enhancer graph
   if (arch === "upscale") {
@@ -227,7 +261,178 @@ export function compileComfyWorkflow({
     return graph;
   }
 
-  // 3. FLUX / DualCLIP / SD3 Diffusion Model graph
+  // 3. Modern 2026 Split-Weight Diffusion Graphs (Z-Image-Turbo, Krea-2, Qwen-Image 2.1)
+  if (arch === "z-image-turbo" || arch === "krea2-turbo" || arch === "qwen-image-21") {
+    const archCfg = {
+      "z-image-turbo": {
+        clipType: "lumina2",
+        defaultClip: "qwen_3_4b_fp8_mixed.safetensors",
+        defaultVae: "ae.safetensors",
+        latentClass: "EmptySD3LatentImage",
+        useAuraShift: true,
+        prefix: "SimpleTun_ZImage",
+      },
+      "krea2-turbo": {
+        clipType: "krea2",
+        defaultClip: "qwen3vl_4b_fp8_scaled.safetensors",
+        defaultVae: "qwen_image_vae.safetensors",
+        latentClass: "EmptyLatentImage",
+        useAuraShift: false,
+        prefix: "SimpleTun_Krea2",
+      },
+      "qwen-image-21": {
+        clipType: "qwen_image",
+        defaultClip: "qwen3vl_8b_int8_convrot.safetensors",
+        defaultVae: "qwen_image_2.1_vae_bf16.safetensors",
+        latentClass: "EmptyLatentImage",
+        useAuraShift: false,
+        prefix: "SimpleTun_Qwen21",
+      },
+    }[arch];
+
+    const graph = {
+      "1": { class_type: "UNETLoader", inputs: { unet_name: primaryModel, weight_dtype: "default" } },
+      "2": {
+        class_type: "CLIPLoader",
+        inputs: { clip_name: clipModel || archCfg.defaultClip, type: archCfg.clipType, device: "default" },
+      },
+      "3": { class_type: "VAELoader", inputs: { vae_name: vaeModel || archCfg.defaultVae } },
+    };
+
+    const { modelRef: loraModelRef, clipRef } = appendLoraChain(graph, 50, ["1", 0], ["2", 0], loras);
+    let sampledModelRef = loraModelRef;
+    if (archCfg.useAuraShift) {
+      graph["15"] = { class_type: "ModelSamplingAuraFlow", inputs: { model: loraModelRef, shift: 3 } };
+      sampledModelRef = ["15", 0];
+    }
+
+    graph["4"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
+    if (negativePrompt && numCfg > 1.0) {
+      graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt, clip: clipRef } };
+    } else {
+      graph["5"] = { class_type: "ConditioningZeroOut", inputs: { conditioning: ["4", 0] } };
+    }
+
+    if (inputImageName) {
+      graph["6"] = { class_type: "LoadImage", inputs: { image: inputImageName } };
+      graph["7"] = { class_type: "VAEEncode", inputs: { pixels: ["6", 0], vae: ["3", 0] } };
+    } else {
+      graph["7"] = { class_type: archCfg.latentClass, inputs: { width, height, batch_size: 1 } };
+    }
+
+    const samplerName = preset?.sampler || "euler";
+    const schedulerName = preset?.scheduler || "simple";
+    graph["8"] = {
+      class_type: "KSampler",
+      inputs: {
+        model: sampledModelRef,
+        positive: ["4", 0],
+        negative: ["5", 0],
+        latent_image: ["7", 0],
+        seed: numSeed,
+        steps: numSteps,
+        cfg: numCfg,
+        sampler_name: samplerName,
+        scheduler: schedulerName,
+        denoise: inputImageName ? denoise : 1.0,
+      },
+    };
+
+    let finalLatent = ["8", 0];
+    if (useHires) {
+      graph["20"] = {
+        class_type: "LatentUpscale",
+        inputs: { samples: ["8", 0], upscale_method: "nearest-exact", width: hiW, height: hiH, crop: "disabled" },
+      };
+      graph["21"] = {
+        class_type: "KSampler",
+        inputs: {
+          model: sampledModelRef,
+          positive: ["4", 0],
+          negative: ["5", 0],
+          latent_image: ["20", 0],
+          seed: numSeed + 1,
+          steps: hiresSteps,
+          cfg: numCfg,
+          sampler_name: samplerName,
+          scheduler: schedulerName,
+          denoise: hiresDenoise,
+        },
+      };
+      finalLatent = ["21", 0];
+    }
+
+    graph["9"] = { class_type: "VAEDecode", inputs: { samples: finalLatent, vae: ["3", 0] } };
+    graph["30"] = { class_type: "SaveImage", inputs: { images: ["9", 0], filename_prefix: archCfg.prefix } };
+    return graph;
+  }
+
+  // 4. FLUX.2 [Klein] 4B graph (EmptyFlux2LatentImage + Flux2Scheduler + CFGGuider + SamplerCustomAdvanced)
+  if (arch === "flux2-klein") {
+    const graph = {
+      "1": { class_type: "UNETLoader", inputs: { unet_name: primaryModel, weight_dtype: "default" } },
+      "2": {
+        class_type: "CLIPLoader",
+        inputs: { clip_name: clipModel || "qwen_3_4b.safetensors", type: "flux2", device: "default" },
+      },
+      "3": { class_type: "VAELoader", inputs: { vae_name: vaeModel || "flux2-vae.safetensors" } },
+    };
+    const { modelRef, clipRef } = appendLoraChain(graph, 50, ["1", 0], ["2", 0], loras);
+
+    graph["4"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
+    if (negativePrompt && numCfg > 1.0) {
+      graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt, clip: clipRef } };
+    } else {
+      graph["5"] = { class_type: "ConditioningZeroOut", inputs: { conditioning: ["4", 0] } };
+    }
+
+    if (inputImageName) {
+      graph["6"] = { class_type: "LoadImage", inputs: { image: inputImageName } };
+      graph["7"] = { class_type: "VAEEncode", inputs: { pixels: ["6", 0], vae: ["3", 0] } };
+    } else {
+      graph["7"] = { class_type: "EmptyFlux2LatentImage", inputs: { width, height, batch_size: 1 } };
+    }
+
+    graph["8"] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+    graph["9"] = { class_type: "Flux2Scheduler", inputs: { steps: numSteps, width, height } };
+    let sigmasRef = ["9", 0];
+    if (inputImageName && denoise < 1.0) {
+      graph["18"] = { class_type: "SplitSigmasDenoise", inputs: { sigmas: ["9", 0], denoise } };
+      sigmasRef = ["18", 1];
+    }
+
+    graph["14"] = {
+      class_type: "CFGGuider",
+      inputs: { model: modelRef, positive: ["4", 0], negative: ["5", 0], cfg: numCfg },
+    };
+    graph["15"] = { class_type: "RandomNoise", inputs: { noise_seed: numSeed } };
+    graph["16"] = {
+      class_type: "SamplerCustomAdvanced",
+      inputs: { noise: ["15", 0], guider: ["14", 0], sampler: ["8", 0], sigmas: sigmasRef, latent_image: ["7", 0] },
+    };
+
+    let finalLatent = ["16", 0];
+    if (useHires) {
+      graph["20"] = {
+        class_type: "LatentUpscale",
+        inputs: { samples: ["16", 0], upscale_method: "nearest-exact", width: hiW, height: hiH, crop: "disabled" },
+      };
+      graph["21"] = { class_type: "Flux2Scheduler", inputs: { steps: hiresSteps, width: hiW, height: hiH } };
+      graph["22"] = { class_type: "SplitSigmasDenoise", inputs: { sigmas: ["21", 0], denoise: hiresDenoise } };
+      graph["23"] = { class_type: "RandomNoise", inputs: { noise_seed: numSeed + 1 } };
+      graph["24"] = {
+        class_type: "SamplerCustomAdvanced",
+        inputs: { noise: ["23", 0], guider: ["14", 0], sampler: ["8", 0], sigmas: ["22", 1], latent_image: ["20", 0] },
+      };
+      finalLatent = ["24", 0];
+    }
+
+    graph["17"] = { class_type: "VAEDecode", inputs: { samples: finalLatent, vae: ["3", 0] } };
+    graph["30"] = { class_type: "SaveImage", inputs: { images: ["17", 0], filename_prefix: "SimpleTun_Flux2Klein" } };
+    return graph;
+  }
+
+  // 5. Legacy FLUX.1 DualCLIP Diffusion Model graph
   if (arch === "flux-unet") {
     const graph = {
       "1": { class_type: "UNETLoader", inputs: { unet_name: primaryModel, weight_dtype: "fp8_e4m3fn" } },
@@ -236,22 +441,10 @@ export function compileComfyWorkflow({
         inputs: { clip_name1: clipModel || "t5xxl_fp8_e4m3fn.safetensors", clip_name2: "clip_l.safetensors", type: "flux" },
       },
       "3": { class_type: "VAELoader", inputs: { vae_name: vaeModel || "ae.safetensors" } },
-      "4": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["2", 0] } },
-      "5": { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "", clip: ["2", 0] } },
     };
-
-    let modelRef = ["1", 0];
-    let clipRef = ["2", 0];
-    let nextId = 10;
-    for (const l of loras) {
-      const id = String(nextId++);
-      graph[id] = {
-        class_type: "LoraLoader",
-        inputs: { model: modelRef, clip: clipRef, lora_name: l.filename, strength_model: l.weight ?? 0.85, strength_clip: l.weight ?? 0.85 },
-      };
-      modelRef = [id, 0];
-      clipRef = [id, 1];
-    }
+    const { modelRef, clipRef } = appendLoraChain(graph, 50, ["1", 0], ["2", 0], loras);
+    graph["4"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
+    graph["5"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "", clip: clipRef } };
 
     if (inputImageName) {
       graph["6"] = { class_type: "LoadImage", inputs: { image: inputImageName } };
@@ -280,30 +473,12 @@ export function compileComfyWorkflow({
     return graph;
   }
 
-  // 4. Standard Checkpoint Image Generation / Editing (Z-Image, Krea, SDXL, Character Base)
+  // 6. Standard Checkpoint Image Generation / Editing (RealVisXL Lightning, Juggernaut XL, FLUX fp8, Character Base)
   const graph = {
     "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: primaryModel } },
   };
-  let modelRef = ["1", 0];
-  let clipRef = ["1", 1];
   const vaeRef = ["1", 2];
-
-  let nextId = 10;
-  for (const l of loras) {
-    const id = String(nextId++);
-    graph[id] = {
-      class_type: "LoraLoader",
-      inputs: {
-        model: modelRef,
-        clip: clipRef,
-        lora_name: l.filename,
-        strength_model: l.weight ?? 0.85,
-        strength_clip: l.weight ?? 0.85,
-      },
-    };
-    modelRef = [id, 0];
-    clipRef = [id, 1];
-  }
+  const { modelRef, clipRef } = appendLoraChain(graph, 50, ["1", 0], ["1", 1], loras);
 
   graph["2"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: clipRef } };
   graph["3"] = { class_type: "CLIPTextEncode", inputs: { text: negativePrompt || "", clip: clipRef } };
@@ -315,6 +490,8 @@ export function compileComfyWorkflow({
     graph["5"] = { class_type: "EmptyLatentImage", inputs: { width, height, batch_size: 1 } };
   }
 
+  const samplerName = preset?.sampler || "euler";
+  const schedulerName = preset?.scheduler || "normal";
   graph["6"] = {
     class_type: "KSampler",
     inputs: {
@@ -325,12 +502,37 @@ export function compileComfyWorkflow({
       seed: numSeed,
       steps: numSteps,
       cfg: numCfg,
-      sampler_name: preset?.sampler || "euler",
-      scheduler: preset?.scheduler || "normal",
+      sampler_name: samplerName,
+      scheduler: schedulerName,
       denoise: inputImageName ? denoise : 1.0,
     },
   };
-  graph["7"] = { class_type: "VAEDecode", inputs: { samples: ["6", 0], vae: vaeRef } };
+
+  let finalLatent = ["6", 0];
+  if (useHires) {
+    graph["20"] = {
+      class_type: "LatentUpscale",
+      inputs: { samples: ["6", 0], upscale_method: "nearest-exact", width: hiW, height: hiH, crop: "disabled" },
+    };
+    graph["21"] = {
+      class_type: "KSampler",
+      inputs: {
+        model: modelRef,
+        positive: ["2", 0],
+        negative: ["3", 0],
+        latent_image: ["20", 0],
+        seed: numSeed + 1,
+        steps: hiresSteps,
+        cfg: numCfg,
+        sampler_name: samplerName,
+        scheduler: schedulerName,
+        denoise: hiresDenoise,
+      },
+    };
+    finalLatent = ["21", 0];
+  }
+
+  graph["7"] = { class_type: "VAEDecode", inputs: { samples: finalLatent, vae: vaeRef } };
   graph["8"] = { class_type: "SaveImage", inputs: { images: ["7", 0], filename_prefix: "SimpleTun" } };
   return graph;
 }

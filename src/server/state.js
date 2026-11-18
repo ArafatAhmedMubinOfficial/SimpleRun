@@ -23,7 +23,7 @@ import {
   verifySafetensorsComplete,
   ModelDownloadManager,
 } from "./model-manager.js";
-import { ComfyEngineManager } from "./comfy-engine.js";
+import { ComfyEngineManager, COMFYUI_RELEASE_VERSION } from "./comfy-engine.js";
 import {
   compileComfyWorkflow,
   uploadImageToComfy,
@@ -97,8 +97,9 @@ export class SimpleTunStore {
           negativePrompt: "",
           aspectRatio: "16:9",
           resolution: "720p",
-          steps: 6,
-          cfg: 1.5,
+          steps: 8,
+          cfg: 1.0,
+          qualityMode: "standard",
           seed: "",
           count: 1,
         },
@@ -154,9 +155,14 @@ export class SimpleTunStore {
       if (fs.existsSync(this.stateFile)) {
         const raw = JSON.parse(fs.readFileSync(this.stateFile, "utf8"));
         const def = this.#defaultState();
+        const mergedPacks = structuredClone(PRESET_PACKS).map((defPack) => {
+          const prev = Array.isArray(raw.packs) ? raw.packs.find((p) => p.packId === defPack.packId) : null;
+          return prev ? { ...defPack, installed: Boolean(prev.installed) } : defPack;
+        });
         return {
           ...def,
           ...raw,
+          packs: mergedPacks,
           settings: { ...def.settings, ...(raw.settings || {}) },
           byokKeys: { ...def.byokKeys, ...(raw.byokKeys || {}) },
         };
@@ -244,12 +250,24 @@ export class SimpleTunStore {
     const engineRunning = liveWorkers.length > 0;
     this.runtime.engineRunning = engineRunning;
     const activeProject = this.state.projects.find((p) => p.id === this.state.activeProjectId) || this.state.projects[0];
+    const rawDetectedVer =
+      liveWorkers[0]?.stats?.system?.comfyui_version || this.engineManager.getInstalledVersion() || null;
+    const normVer = (v) => (v ? String(v).replace(/^v/i, "").trim() : "");
+    const targetNorm = normVer(COMFYUI_RELEASE_VERSION);
+    const detectedNorm = normVer(rawDetectedVer);
+    const engineInstalled = this.engineManager.isInstalled();
+    const engineNeedsUpgrade = Boolean(engineInstalled && detectedNorm && detectedNorm !== targetNorm);
+
     return {
       engineRunning,
-      engineInstalled: this.engineManager.isInstalled(),
+      engineInstalled,
       engineInstalling: this.engineManager.installing,
       engineInstallStage: this.engineManager.installStage,
-      engineVersion: liveWorkers[0]?.stats?.system?.comfyui_version || (this.engineManager.isInstalled() ? "ComfyUI v0.3.14" : "Not Installed"),
+      engineVersion: rawDetectedVer
+        ? (String(rawDetectedVer).startsWith("v") ? rawDetectedVer : `v${rawDetectedVer}`)
+        : (engineInstalled ? "ComfyUI Installed" : "Not Installed"),
+      targetEngineVersion: COMFYUI_RELEASE_VERSION,
+      engineNeedsUpgrade,
       comfyUiConnected: engineRunning,
       comfyUiUrl: this.engineManager.comfyUrl,
       workerCount: liveWorkers.length,
@@ -318,7 +336,12 @@ export class SimpleTunStore {
     this.getHardware(true).then((hw) => {
       this.engineManager.installLocalEngine({ cudaSupported: hw.cudaSupported }).catch(() => {});
     });
-    return { status: "started", stage: "downloading_comfyui" };
+    return { status: "started", stage: "downloading_comfyui", targetVersion: COMFYUI_RELEASE_VERSION };
+  }
+
+  upgradeLocalEngine() {
+    this.engineManager.upgradeLocalEngine().catch(() => {});
+    return { status: "started", stage: "upgrading_comfyui", targetVersion: COMFYUI_RELEASE_VERSION };
   }
 
   // ---- Real Capabilities, Disk Models & Downloader ----
@@ -725,6 +748,7 @@ export class SimpleTunStore {
       cfg: options.cfg,
       denoise: options.denoise,
       scale: scale || options.scale || 2,
+      qualityMode: options.qualityMode || "standard",
       keepResolution: options.keepResolution,
       ...options,
     };
@@ -742,6 +766,7 @@ export class SimpleTunStore {
           resolution: jobOptions.resolution,
           durationSeconds: jobOptions.durationSeconds,
           scale: jobOptions.scale,
+          qualityMode: jobOptions.qualityMode || "standard",
           keepResolution: Boolean(jobOptions.keepResolution),
           loras: resolvedLoras,
           inputImageName: inputFilePath ? path.basename(inputFilePath) : null,
@@ -854,6 +879,7 @@ export class SimpleTunStore {
                 resolution: job.options.resolution,
                 durationSeconds: job.options.durationSeconds || 4,
                 scale: meta.scale || 2,
+                qualityMode: job.options.qualityMode || "standard",
                 keepResolution: Boolean(job.options.keepResolution),
                 loras: meta.loras || [],
                 inputImageName: uploadedComfyName,

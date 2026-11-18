@@ -7,12 +7,12 @@ export const PRESET_PACKS = [
   {
     packId: "local-core-pack",
     name: "SimpleTun Core Pack",
-    version: "2.4.0",
-    description: "Fast, ultra-sharp image generation and editing presets ready for local GPUs and SimpleTun Cloud.",
-    minVramGb: 4,
+    version: "2.5.0",
+    description: "Z-Image-Turbo S3-DiT (2026), Juggernaut-XL v9 Studio Pro, and single-file RealVisXL V5.0 Lightning.",
+    minVramGb: 6,
     installed: true,
     updateAvailable: false,
-    presets: ["z-image-turbo", "z-image-pro"],
+    presets: ["z-image-turbo", "z-image-pro", "realvis-xl-lightning"],
   },
   {
     packId: "flux-pack",
@@ -111,12 +111,50 @@ export const CAPABILITIES = [
     packId: "local-core-pack",
     presetId: "z-image-turbo",
     mediaType: "image",
-    name: "Z-Image Turbo",
-    description: "Ultra-fast, high-quality images in seconds. Great starter preset for 4GB+ GPUs.",
+    name: "Z-Image Turbo (2026 S3-DiT)",
+    description: "Alibaba Tongyi-MAI 6B S3-DiT distilled (INT8 + Qwen3-4B). Crisp photorealism in 8 steps on 15 GB T4 GPUs.",
     baseModel: "z-image",
     promptFamily: "z-image",
     apiProvider: null,
-    minVramGb: 4,
+    minVramGb: 8,
+    recommendedVramGb: 12,
+    defaultNegativePrompt: "",
+    inputs: {
+      acceptsPrompt: true,
+      requiresPrompt: true,
+      requiresImage: false,
+      acceptsReferenceImages: null,
+      acceptsVideo: false,
+      acceptsAudio: false,
+      acceptsReferenceVideos: false,
+      acceptsReferenceAudios: false,
+      supportsDialogue: false,
+      supportsLoras: true,
+    },
+    options: {
+      steps: { min: 4, max: 14, default: 8 },
+      cfg: { min: 1.0, max: 2.0, default: 1.0 },
+      duration: null,
+      resolution: ["720p", "1080p"],
+      aspectRatio: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      controls: {},
+    },
+    cloudAliasTo: null,
+    localReady: true,
+    cloudEligible: true,
+    cloudCost: 4,
+    onThisMachine: { rating: "great", finishPercent: 99, p90Min: 0.45, typicalMin: 0.2, maxSize: "1080p" },
+  },
+  {
+    packId: "local-core-pack",
+    presetId: "realvis-xl-lightning",
+    mediaType: "image",
+    name: "RealVisXL V5.0 Lightning",
+    description: "Fast single-file SDXL Lightning checkpoint (6.46 GB). Best speed when paired with Hires Fix 1.5x.",
+    baseModel: "sdxl",
+    promptFamily: "sdxl-photoreal",
+    apiProvider: null,
+    minVramGb: 6,
     recommendedVramGb: 8,
     defaultNegativePrompt: "worst quality, low quality, blurry, deformed, bad anatomy, extra heads, duplicate, oversaturated, watermark",
     inputs: {
@@ -143,20 +181,20 @@ export const CAPABILITIES = [
     localReady: true,
     cloudEligible: true,
     cloudCost: 4,
-    onThisMachine: { rating: "great", finishPercent: 99, p90Min: 0.4, typicalMin: 0.15, maxSize: "1080p" },
+    onThisMachine: { rating: "great", finishPercent: 99, p90Min: 0.35, typicalMin: 0.12, maxSize: "1080p" },
   },
   {
     packId: "local-core-pack",
     presetId: "z-image-pro",
     mediaType: "image",
-    name: "Z-Image Studio Pro",
-    description: "Cinematic contrast, fine skin detail, and sharp compositional control.",
-    baseModel: "z-image",
-    promptFamily: "z-image",
+    name: "Juggernaut XL v9 Photo Pro",
+    description: "Full 22-step SDXL RunDiffusion Photo model for editorial portraits, skin pores, and studio lighting.",
+    baseModel: "sdxl",
+    promptFamily: "sdxl-photoreal",
     apiProvider: null,
     minVramGb: 6,
     recommendedVramGb: 8,
-    defaultNegativePrompt: "blurry, plastic skin, oversaturated, watermark, bad anatomy",
+    defaultNegativePrompt: "blurry, plastic skin, oversaturated, watermark, bad anatomy, extra limbs, duplicate subject",
     inputs: {
       acceptsPrompt: true,
       requiresPrompt: true,
@@ -225,14 +263,14 @@ export const CAPABILITIES = [
     packId: "flux-pack",
     presetId: "flux-klein",
     mediaType: "image",
-    name: "FLUX Klein Fast",
-    description: "Compact 4-step FLUX architecture optimized for rapid iteration and low VRAM.",
+    name: "FLUX.2 [Klein] 4B",
+    description: "2026 Black Forest Labs Apache-2.0 4B model (7.22 GB + Qwen3-4B). Ultra-clean 4-step editorial realism.",
     baseModel: "flux-klein",
     promptFamily: "flux-klein",
     apiProvider: null,
-    minVramGb: 6,
-    recommendedVramGb: 8,
-    defaultNegativePrompt: "blurry, deformed, watermark",
+    minVramGb: 8,
+    recommendedVramGb: 12,
+    defaultNegativePrompt: "",
     inputs: {
       acceptsPrompt: true,
       requiresPrompt: true,
@@ -246,8 +284,8 @@ export const CAPABILITIES = [
       supportsLoras: true,
     },
     options: {
-      steps: { min: 4, max: 16, default: 8 },
-      cfg: { min: 1.0, max: 4.0, default: 1.8 },
+      steps: { min: 4, max: 16, default: 4 },
+      cfg: { min: 1.0, max: 3.0, default: 1.0 },
       duration: null,
       resolution: ["720p", "1080p"],
       aspectRatio: ["1:1", "3:4", "4:3", "9:16", "16:9"],
@@ -257,19 +295,19 @@ export const CAPABILITIES = [
     localReady: true,
     cloudEligible: true,
     cloudCost: 5,
-    onThisMachine: { rating: "great", finishPercent: 99, p90Min: 0.5, typicalMin: 0.2, maxSize: "1080p" },
+    onThisMachine: { rating: "great", finishPercent: 99, p90Min: 0.45, typicalMin: 0.2, maxSize: "1080p" },
   },
   {
     packId: "flux-pack",
     presetId: "flux-klein-edit",
     mediaType: "image",
-    name: "FLUX Klein Image Edit",
-    description: "Edit, relight, swap outfits, or restyle an uploaded reference image via plain language.",
+    name: "FLUX.2 [Klein] Base 4B Edit",
+    description: "Full 20-step FLUX.2 Klein Base model for precise relighting, editing, and high-CFG control.",
     baseModel: "flux-klein",
     promptFamily: "flux-klein-edit",
     apiProvider: null,
-    minVramGb: 6,
-    recommendedVramGb: 8,
+    minVramGb: 8,
+    recommendedVramGb: 12,
     defaultNegativePrompt: "artifacts, seam lines, blurry face, watermark",
     inputs: {
       acceptsPrompt: true,
@@ -284,8 +322,8 @@ export const CAPABILITIES = [
       supportsLoras: false,
     },
     options: {
-      steps: { min: 8, max: 24, default: 14 },
-      cfg: { min: 1.0, max: 6.0, default: 3.0 },
+      steps: { min: 8, max: 28, default: 20 },
+      cfg: { min: 1.0, max: 7.0, default: 5.0 },
       denoise: { min: 0.1, max: 1.0, default: 0.72 },
       duration: null,
       resolution: ["720p", "1080p"],
@@ -302,14 +340,14 @@ export const CAPABILITIES = [
     packId: "krea2-pack",
     presetId: "krea2-turbo",
     mediaType: "image",
-    name: "Krea 2 Photoreal",
-    description: "Natural skin pores, zero CGI look, and clean commercial product staging.",
+    name: "Krea 2 Turbo (INT8)",
+    description: "2026 Krea-2 Turbo native architecture with Qwen3-VL text encoder. Zero CGI sheen, lifelike pores & fabrics.",
     baseModel: "krea-2",
     promptFamily: "krea-2",
     apiProvider: null,
-    minVramGb: 8,
-    recommendedVramGb: 12,
-    defaultNegativePrompt: "plastic skin, cgi, 3d render, cartoon, airbrushed, watermark",
+    minVramGb: 12,
+    recommendedVramGb: 15,
+    defaultNegativePrompt: "",
     inputs: {
       acceptsPrompt: true,
       requiresPrompt: true,
@@ -323,8 +361,8 @@ export const CAPABILITIES = [
       supportsLoras: true,
     },
     options: {
-      steps: { min: 8, max: 30, default: 18 },
-      cfg: { min: 1.5, max: 6.5, default: 3.2 },
+      steps: { min: 4, max: 16, default: 8 },
+      cfg: { min: 1.0, max: 2.5, default: 1.0 },
       duration: null,
       resolution: ["720p", "1080p"],
       aspectRatio: ["1:1", "3:4", "4:3", "9:16", "16:9"],
@@ -334,20 +372,20 @@ export const CAPABILITIES = [
     localReady: true,
     cloudEligible: true,
     cloudCost: 7,
-    onThisMachine: { rating: "good", finishPercent: 96, p90Min: 1.1, typicalMin: 0.5, maxSize: "1080p" },
+    onThisMachine: { rating: "good", finishPercent: 95, p90Min: 1.1, typicalMin: 0.5, maxSize: "1080p" },
   },
   {
     packId: "krea2-pack",
     presetId: "qwen-image-21",
     mediaType: "image",
-    name: "Qwen Image 2.1",
-    description: "High prompt adherence with sharp label typography and multi-object layouts.",
+    name: "Qwen-Image 2.1 (INT8)",
+    description: "Alibaba 2026 flagship INT8 typography & composition model (2K native, crisp product signage & hands).",
     baseModel: "qwen-image-21",
     promptFamily: "qwen-image-21",
     apiProvider: null,
-    minVramGb: 8,
-    recommendedVramGb: 12,
-    defaultNegativePrompt: "misspelled text, gibberish, blurry, lowres",
+    minVramGb: 12,
+    recommendedVramGb: 15,
+    defaultNegativePrompt: "",
     inputs: {
       acceptsPrompt: true,
       requiresPrompt: true,
@@ -361,8 +399,8 @@ export const CAPABILITIES = [
       supportsLoras: false,
     },
     options: {
-      steps: { min: 12, max: 32, default: 20 },
-      cfg: { min: 2.0, max: 7.0, default: 4.0 },
+      steps: { min: 15, max: 45, default: 25 },
+      cfg: { min: 1.0, max: 2.5, default: 1.0 },
       duration: null,
       resolution: ["720p", "1080p"],
       aspectRatio: ["1:1", "3:4", "4:3", "9:16", "16:9"],
@@ -372,7 +410,7 @@ export const CAPABILITIES = [
     localReady: true,
     cloudEligible: true,
     cloudCost: 7,
-    onThisMachine: { rating: "good", finishPercent: 94, p90Min: 1.2, typicalMin: 0.55, maxSize: "1080p" },
+    onThisMachine: { rating: "good", finishPercent: 94, p90Min: 1.4, typicalMin: 0.65, maxSize: "1080p" },
   },
   {
     packId: "krea2-pack",
@@ -1017,6 +1055,17 @@ export const CAPABILITIES = [
 // Note: Comfy-Org flux1-*-fp8 & SDXL Turbo / Juggernaut-XL checkpoints bundle UNET + CLIP + VAE together for CheckpointLoaderSimple.
 export const PRESET_MODEL_SPECS = {
   "z-image-turbo": {
+    workflowArch: "z-image-turbo",
+    sampler: "res_multistep",
+    scheduler: "simple",
+    hfInferenceModel: "Comfy-Org/Z-Image-Turbo",
+    requiredModels: [
+      { filename: "z_image_turbo_int8_convrot.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors", sizeGb: 5.78 },
+      { filename: "qwen_3_4b_fp8_mixed.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/text_encoders/qwen_3_4b_fp8_mixed.safetensors", sizeGb: 5.25 },
+      { filename: "ae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/vae/ae.safetensors", sizeGb: 0.31 },
+    ],
+  },
+  "realvis-xl-lightning": {
     workflowArch: "checkpoint-t2i",
     sampler: "dpmpp_sde",
     scheduler: "karras",
@@ -1044,48 +1093,58 @@ export const PRESET_MODEL_SPECS = {
     ],
   },
   "flux-klein": {
-    workflowArch: "checkpoint-t2i",
+    workflowArch: "flux2-klein",
     sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
+    scheduler: "flux2",
+    hfInferenceModel: "Comfy-Org/Flux-2-Klein-4B",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 16.05 },
+      { filename: "flux-2-klein-4b.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors", sizeGb: 7.22 },
+      { filename: "qwen_3_4b.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors", sizeGb: 7.49 },
+      { filename: "flux2-vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors", sizeGb: 0.31 },
     ],
   },
   "flux-klein-edit": {
-    workflowArch: "checkpoint-t2i",
+    workflowArch: "flux2-klein",
     sampler: "euler",
-    scheduler: "simple",
-    hfInferenceModel: "black-forest-labs/FLUX.1-schnell",
+    scheduler: "flux2",
+    hfInferenceModel: "Comfy-Org/Flux-2-Klein-4B",
     requiredModels: [
-      { filename: "flux1-schnell-fp8.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors", sizeGb: 16.05 },
+      { filename: "flux-2-klein-base-4b.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-base-4b.safetensors", sizeGb: 7.22 },
+      { filename: "qwen_3_4b.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors", sizeGb: 7.49 },
+      { filename: "flux2-vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors", sizeGb: 0.31 },
     ],
   },
   "krea2-turbo": {
-    workflowArch: "checkpoint-t2i",
-    sampler: "dpmpp_sde",
-    scheduler: "karras",
-    hfInferenceModel: "SG161222/RealVisXL_V5.0_Lightning",
+    workflowArch: "krea2-turbo",
+    sampler: "euler",
+    scheduler: "simple",
+    hfInferenceModel: "Comfy-Org/Krea-2",
     requiredModels: [
-      { filename: "RealVisXL_V5.0_Lightning_fp16.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/SG161222/RealVisXL_V5.0_Lightning/resolve/main/RealVisXL_V5.0_Lightning_fp16.safetensors", sizeGb: 6.46 },
+      { filename: "krea2_turbo_int8_convrot.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_int8_convrot.safetensors", sizeGb: 12.57 },
+      { filename: "qwen3vl_4b_fp8_scaled.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors", sizeGb: 4.88 },
+      { filename: "qwen_image_vae.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors", sizeGb: 0.24 },
     ],
   },
   "qwen-image-21": {
-    workflowArch: "checkpoint-t2i",
-    sampler: "dpmpp_2m",
-    scheduler: "karras",
-    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
+    workflowArch: "qwen-image-21",
+    sampler: "euler",
+    scheduler: "simple",
+    hfInferenceModel: "Comfy-Org/Qwen-Image-2.1",
     requiredModels: [
-      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
+      { filename: "qwen_image_2.1_int8_convrot.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors", sizeGb: 6.76 },
+      { filename: "qwen3vl_8b_int8_convrot.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors", sizeGb: 8.71 },
+      { filename: "qwen_image_2.1_vae_bf16.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", sizeGb: 0.63 },
     ],
   },
   "qwen-image-21-edit": {
-    workflowArch: "checkpoint-t2i",
-    sampler: "dpmpp_2m",
-    scheduler: "karras",
-    hfInferenceModel: "RunDiffusion/Juggernaut-XL-v9",
+    workflowArch: "qwen-image-21",
+    sampler: "euler",
+    scheduler: "simple",
+    hfInferenceModel: "Comfy-Org/Qwen-Image-2.1",
     requiredModels: [
-      { filename: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", subfolder: "checkpoints", url: "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors", sizeGb: 6.62 },
+      { filename: "qwen_image_2.1_int8_convrot.safetensors", subfolder: "diffusion_models", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors", sizeGb: 6.76 },
+      { filename: "qwen3vl_8b_int8_convrot.safetensors", subfolder: "text_encoders", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors", sizeGb: 8.71 },
+      { filename: "qwen_image_2.1_vae_bf16.safetensors", subfolder: "vae", url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", sizeGb: 0.63 },
     ],
   },
   "wan-2.2-t2v": {
@@ -1223,22 +1282,67 @@ for (const cap of CAPABILITIES) {
 export const PROMPT_GUIDES = {
   "z-image": {
     family: "z-image",
-    familyName: "Z-Image",
+    familyName: "Z-Image-Turbo (S3-DiT 2026)",
+    version: 2,
+    generic: false,
+    text: `# Z-Image-Turbo Prompting Guide (2026)
+
+Z-Image-Turbo (Alibaba Tongyi-MAI 6B S3-DiT + Qwen3-4B) reads concrete photographic English descriptions best — NOT tag soup.
+
+- Describe: **Subject + Action -> Material/Texture -> Environment -> Lighting Direction -> Lens/Depth**.
+- Avoid comma-stuffed buzzwords ("8k, masterpiece, ultra-detailed, trending on artstation") — they degrade skin/fur texture.
+- **Keep CFG at 1.0** and Steps at **8** with sampler \`res_multistep\`, then turn on **Hires Fix (2-Pass)** for razor-sharp 1.5x detail.
+- Example: "Editorial wildlife photograph of a single red fox standing alert in untouched alpine snow beside frosted pine trunks, warm low morning rim light catching fur whiskers, shallow depth of field, 85mm telephoto lens."`,
+  },
+  "flux-klein": {
+    family: "flux-klein",
+    familyName: "FLUX.2 [Klein] 4B",
     version: 1,
     generic: false,
-    text: `# Z-Image Prompting Guide
+    text: `# FLUX.2 [Klein] 4B Prompting Guide
 
-Z-Image thrives on concise, concrete visual descriptions ordered from primary subject -> action/pose -> environment -> lighting -> lens/atmosphere.
+FLUX.2 Klein 4B uses Qwen3-4B text conditioning and the Flux2 mu-shifted scheduler.
 
-- Avoid stacking generic buzzwords ("8k, hyperrealistic, masterpiece, unreal engine") — they push Z-Image toward synthetic CGI skin.
-- Lead with what matters most; the first 25 words carry the strongest weight.
-- Example: "Candid waist-up portrait of a woman in a waxed canvas jacket standing under warm streetlamps in light drizzle, shallow depth of field, 50mm film grain."
+- Runs best at **4 steps** with **CFG 1.0** (or 20 steps / CFG 5.0 on FLUX.2 Klein Base).
+- Quote exact rendered text inside double quotes: \`a brass plaque stamped "EST. 2026"\`.
+- Specify lens focal length (35mm, 50mm, 85mm), lighting direction, and natural surface imperfections.`,
+  },
+  "krea-2": {
+    family: "krea-2",
+    familyName: "Krea 2 Turbo (INT8)",
+    version: 1,
+    generic: false,
+    text: `# Krea 2 Turbo Prompting Guide
 
-## Negative prompts in SimpleTun
-SimpleTun applies a curated default negative prompt automatically and appends your custom negative terms after it.
+Krea 2 uses Qwen3-VL text conditioning for natural lighting, authentic skin pores, and organic film grain.
 
-## Notes for this preset
-Recommended steps: 8 (Turbo) or 22 (Studio Pro).`,
+- Run at **8 steps** and **CFG 1.0** with \`euler\` / \`simple\`.
+- Avoid "photorealistic" or "CGI" filler words; specify real camera details ("shot on 35mm film, harsh direct sunlight, visible texture").`,
+  },
+  "qwen-image-21": {
+    family: "qwen-image-21",
+    familyName: "Qwen-Image 2.1",
+    version: 1,
+    generic: false,
+    text: `# Qwen-Image 2.1 Prompting Guide
+
+Qwen-Image 2.1 excels at complex spatial scenes, dense product packaging typography, and native 2K compositions.
+
+- Keep **CFG at 1.0** and **Steps 25-40** for clean typography and hands.
+- Describe left-to-right or foreground-to-background layout explicitly.`,
+  },
+  "sdxl-photoreal": {
+    family: "sdxl-photoreal",
+    familyName: "SDXL Photoreal (RealVisXL Lightning / Juggernaut XL)",
+    version: 1,
+    generic: false,
+    text: `# SDXL Photoreal Prompting Guide
+
+Single-file SDXL models (RealVisXL V5.0 Lightning & Juggernaut XL v9) fit fast in 6-8 GB VRAM.
+
+- On wide ratios (\`16:9\`), specify **"single centered subject"** (e.g., "a single red fox in profile") to prevent wide-canvas double-subject artifacts.
+- Enable **Hires Fix 1.5x** in Step 3 for crisp hair, fur, and eyes.
+- RealVisXL Lightning: **6 steps**, **CFG 1.5**. Juggernaut XL v9: **22 steps**, **CFG 4.5**.`,
   },
   "flux-2": {
     family: "flux-2",

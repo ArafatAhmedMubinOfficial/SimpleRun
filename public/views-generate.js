@@ -91,21 +91,24 @@ export function renderPromptBuilder(stage, refreshAll) {
         ${filtered.map((p) => {
           const isSel = selected?.presetId === p.presetId;
           const vramFit = p.minVramGb <= (uiState.bootstrap?.status?.vramGb || 16);
+          const totalGb = (p.requiredModels || []).reduce((sum, m) => sum + (Number(m.sizeGb) || 0), 0);
+          const is2026Flagship = ["z-image-turbo", "flux-klein", "flux-klein-edit", "krea2-turbo", "qwen-image-21", "qwen-image-21-edit"].includes(p.presetId);
           return `
             <div class="preset-card ${isSel ? "selected" : ""}" data-preset="${esc(p.presetId)}">
               <div>
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
-                  <span class="tag">${esc(p.packId)}</span>
-                  ${p.apiProvider ? `<span class="tag amber">BYOK · ${esc(p.apiProvider)}</span>` : vramFit ? `<span class="tag green">✓ Fits your GPU</span>` : `<span class="tag amber">Use Cloud</span>`}
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+                  <span class="tag">${p.minVramGb ? `${p.minVramGb} GB VRAM` : esc(p.packId)}</span>
+                  ${is2026Flagship ? `<span class="tag purple">2026 Latest</span>` : ""}
+                  ${p.apiProvider ? `<span class="tag amber">BYOK · ${esc(p.apiProvider)}</span>` : vramFit ? `<span class="tag green">✓ Fits your GPU</span>` : `<span class="tag amber">Tight VRAM / Cloud</span>`}
                 </div>
                 <div style="font-family:var(--font-display); font-size:17px; font-weight:700; color:#fff; margin-bottom:6px;">${esc(p.name)}</div>
                 <div style="font-size:13px; color:var(--text-secondary); line-height:1.45;">${esc(p.description)}</div>
               </div>
               <div style="display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px solid var(--border-subtle);">
-                ${p.weightsOnDisk ? `<span class="tag green">Weights Ready</span>` : p.apiProvider ? `<span class="tag amber">Remote API</span>` : `<span class="tag amber">Missing Weights</span>`}
-                ${p.localReady && !p.apiProvider ? `<span class="tag green">Local Ready</span>` : ""}
-                ${p.cloudEligible ? `<span class="tag cyan">Cloud · ${p.cloudCost} cr</span>` : ""}
+                ${p.weightsOnDisk ? `<span class="tag green">Weights Ready</span>` : p.apiProvider ? `<span class="tag amber">Remote API</span>` : `<span class="tag amber">Download (${totalGb.toFixed(1)} GB)</span>`}
+                ${(p.requiredModels || []).length === 1 ? `<span class="tag">1-File</span>` : totalGb > 0 ? `<span class="tag">${p.requiredModels.length} files · ${totalGb.toFixed(1)} GB</span>` : ""}
                 ${p.inputs.supportsLoras ? `<span class="tag purple">LoRAs</span>` : ""}
+                ${p.cloudEligible ? `<span class="tag cyan">Cloud · ${p.cloudCost} cr</span>` : ""}
               </div>
             </div>
           `;
@@ -130,9 +133,18 @@ export function renderPromptBuilder(stage, refreshAll) {
           <div class="field">
             <label class="field-label">
               <span>Describe what you want to create</span>
-              <span style="font-weight:500; color:var(--text-muted);">Lead with subject &amp; lighting</span>
+              <span style="font-weight:500; color:var(--text-muted);">Lead with subject, lighting &amp; lens</span>
             </label>
             <textarea id="genPromptInput" class="textarea" placeholder="Describe subject, setting, camera angle, lighting...">${esc(uiState.form.prompt)}</textarea>
+            <div class="quick-chips">
+              ${[
+                { label: "+ 85mm shallow DoF", add: "85mm telephoto lens, shallow depth of field, creamy background bokeh" },
+                { label: "+ Golden rim light", add: "warm low golden hour rim light casting crisp shadows" },
+                { label: "+ Natural skin/fur texture", add: "rich fine surface texture, natural lighting, no airbrushing" },
+                { label: "+ 35mm documentary grain", add: "shot on 35mm Kodak Portra film, authentic optical contrast" },
+                { label: "+ Single centered subject", add: "single centered subject framed with clean breathing room" },
+              ].map((q) => `<button type="button" class="quick-chip" data-qadd="${esc(q.add)}">${esc(q.label)}</button>`).join("")}
+            </div>
           </div>
 
           ${selected.inputs.requiresImage || selected.inputs.acceptsReferenceImages ? `
@@ -182,13 +194,17 @@ export function renderPromptBuilder(stage, refreshAll) {
             const st = uiState.bootstrap?.status || {};
             const strict = Boolean(uiState.bootstrap?.settings?.strictRealEngine);
             if (selected.apiProvider) return "";
+            const modernArch = ["z-image-turbo", "flux2-klein", "krea2-turbo", "qwen-image-21"].includes(selected.workflowArch);
             const alerts = [];
             if (!st.engineInstalled) alerts.push("ComfyUI engine is not installed yet.");
             else if (!st.engineRunning) alerts.push("ComfyUI engine is installed but stopped.");
+            if (st.engineNeedsUpgrade && modernArch) {
+              alerts.push(`ComfyUI ${st.engineVersion} needs upgrade to ${st.targetEngineVersion} for ${selected.name}.`);
+            }
             if (!selected.weightsOnDisk) alerts.push(`Missing local weight file(s) for ${selected.name}.`);
             if (alerts.length === 0) {
               return `<div style="margin-top:14px; padding:10px 12px; border-radius:10px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); font-size:12.5px; color:#a7f3d0;">
-                <strong>Ready for Real GPU Execution:</strong> ${st.workerCount || 1} ComfyUI worker(s) live &amp; weights present on disk.
+                <strong>Ready for Real GPU Execution:</strong> ${st.workerCount || 1} ComfyUI worker(s) live (${esc(st.engineVersion)}) &amp; weights verified on disk.
               </div>`;
             }
             return `
@@ -200,7 +216,8 @@ export function renderPromptBuilder(stage, refreshAll) {
                     : "Until ComfyUI + weights are active, Local Generate produces a labeled Sandbox Preview instead of real diffusion."}
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                  ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="inlineInstallEngBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? `Installing (${esc(st.engineInstallStage)})...` : "Install ComfyUI Engine"}</button>` : ""}
+                  ${!st.engineInstalled ? `<button class="btn-primary btn-sm" id="inlineInstallEngBtn" ${st.engineInstalling ? "disabled" : ""}>⬇ ${st.engineInstalling ? `Installing (${esc(st.engineInstallStage)})...` : `Install ComfyUI ${esc(st.targetEngineVersion || "")}`}</button>` : ""}
+                  ${st.engineInstalled && st.engineNeedsUpgrade ? `<button class="btn-primary btn-sm" id="inlineUpgradeEngBtn" ${st.engineInstalling ? "disabled" : ""}>⬆ ${st.engineInstalling ? "Upgrading..." : `Upgrade ComfyUI → ${esc(st.targetEngineVersion || "v0.45.0")}`}</button>` : ""}
                   ${st.engineInstalled && !st.engineRunning ? `<button class="btn-primary btn-sm" id="inlineStartEngBtn">▶ Start ComfyUI (${st.cudaGpuCount || 1} GPU)</button>` : ""}
                   <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#fff; cursor:pointer; margin-left:auto;">
                     <input type="checkbox" id="inlineStrictGpuChk" ${strict ? "checked" : ""} />
@@ -242,6 +259,27 @@ export function renderPromptBuilder(stage, refreshAll) {
             </div>
           </div>
 
+          ${selected.mediaType === "image" ? `
+            <div class="field">
+              <label class="field-label">
+                <span>Quality &amp; Detail Pass</span>
+                <span style="color:var(--brand-cyan); font-weight:600;">2-Pass eliminates artifacts</span>
+              </label>
+              <div class="quality-grid">
+                ${[
+                  { id: "standard", title: "Fast 1-Pass", desc: "Instant native 1MP" },
+                  { id: "hires", title: "Hires Fix 1.5x", desc: "Crisp detail (rec)" },
+                  { id: "ultra", title: "Ultra 2-Pass", desc: "Max fine texture" },
+                ].map((q) => `
+                  <button type="button" class="quality-card ${uiState.form.qualityMode === q.id ? "active" : ""}" data-qmode="${q.id}">
+                    <div style="font-size:12.5px; font-weight:700;">${esc(q.title)}</div>
+                    <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${esc(q.desc)}</div>
+                  </button>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
+
           ${selected.options.duration ? `
             <div class="field">
               <label class="field-label"><span>Duration (seconds)</span><span>${uiState.form.durationSeconds}s</span></label>
@@ -270,7 +308,7 @@ export function renderPromptBuilder(stage, refreshAll) {
           ${selected.options.cfg ? `
             <div class="field">
               <label class="field-label"><span>Guidance (CFG)</span><span id="cfgVal">${uiState.form.cfg}</span></label>
-              <input type="range" id="cfgSlider" min="${selected.options.cfg.min}" max="${selected.options.cfg.max}" step="0.5" value="${uiState.form.cfg}" />
+              <input type="range" id="cfgSlider" min="${selected.options.cfg.min}" max="${selected.options.cfg.max}" step="0.1" value="${uiState.form.cfg}" />
             </div>
           ` : ""}
 
@@ -356,6 +394,21 @@ export function renderPromptBuilder(stage, refreshAll) {
     if (sd) uiState.form.seed = sd.value;
     if (ct) uiState.form.count = Number(ct.value) || 1;
   };
+  stage.querySelectorAll("[data-qadd]").forEach((b) => {
+    b.onclick = () => {
+      syncText();
+      const phrase = b.dataset.qadd;
+      const cur = (uiState.form.prompt || "").trim();
+      if (!cur.toLowerCase().includes(phrase.toLowerCase())) {
+        uiState.form.prompt = cur ? `${cur.replace(/[,\s]+$/, "")}, ${phrase}` : phrase;
+        const box = document.getElementById("genPromptInput");
+        if (box) box.value = uiState.form.prompt;
+      }
+    };
+  });
+  stage.querySelectorAll("[data-qmode]").forEach((b) => {
+    b.onclick = () => { syncText(); uiState.form.qualityMode = b.dataset.qmode; renderPromptBuilder(stage, refreshAll); };
+  });
   stage.querySelectorAll("[data-aspect]").forEach((b) => {
     b.onclick = () => { syncText(); uiState.form.aspectRatio = b.dataset.aspect; renderPromptBuilder(stage, refreshAll); };
   });
@@ -422,6 +475,7 @@ export function renderPromptBuilder(stage, refreshAll) {
             options: {
               aspectRatio: uiState.form.aspectRatio,
               resolution: uiState.form.resolution,
+              qualityMode: uiState.form.qualityMode || "standard",
               durationSeconds: uiState.form.durationSeconds,
               steps: uiState.form.steps,
               cfg: uiState.form.cfg,
@@ -444,6 +498,16 @@ export function renderPromptBuilder(stage, refreshAll) {
       try {
         await api("/api/ui/engine/install", { method: "POST" });
         toast("Started ComfyUI + PyTorch CUDA installation (check Engine modal for live logs).");
+        await refreshAll();
+      } catch (err) { toast(err.message, true); }
+    };
+  }
+  const inlineUpgradeBtn = document.getElementById("inlineUpgradeEngBtn");
+  if (inlineUpgradeBtn) {
+    inlineUpgradeBtn.onclick = async () => {
+      try {
+        await api("/api/ui/engine/upgrade", { method: "POST" });
+        toast("Started upgrading ComfyUI Engine to v0.45.0 (open Engine modal to follow live logs).");
         await refreshAll();
       } catch (err) { toast(err.message, true); }
     };
@@ -728,42 +792,85 @@ export function renderCharacters(stage, refreshAll) {
 
 export function renderGallery(stage, refreshAll) {
   const jobs = (uiState.bootstrap?.jobs || []).filter((j) => j.status === "completed" && j.resultUrl);
+  const triggerUpscaleJob = async (job) => {
+    try {
+      const resp = await fetch(appUrl(job.resultUrl));
+      const blob = await resp.blob();
+      const up = await uploadBrowserFile(new File([blob], `${job.jobId}.png`, { type: blob.type || "image/png" }));
+      await api("/generate", {
+        method: "POST",
+        body: {
+          presetId: "rtx-upscaler",
+          packId: "enhancer-pack",
+          mediaType: "image",
+          prompt: `Enhanced 2x crisp upscale of ${job.presetId}`,
+          image: up.handle,
+          options: { resolution: "1080p", scale: 2 },
+        },
+      });
+      uiState.queueOpen = true;
+      toast("Queued 2x RealESRGAN Upscale in Queue!");
+      await refreshAll();
+    } catch (err) { toast(err.message, true); }
+  };
+
   stage.innerHTML = `
     <div class="page-header">
       <div>
         <p class="eyebrow">Gallery</p>
         <h1 class="page-title">Finished Generations (${jobs.length})</h1>
-        <p class="page-sub">Inspect full-resolution renders, copy seeds to refine, or send straight to the Enhancer.</p>
+        <p class="page-sub">Inspect full-resolution renders, remix prompt/seed, or upscale crispness 2× with RealESRGAN.</p>
       </div>
     </div>
     ${jobs.length === 0 ? `<div class="card" style="padding:36px; text-align:center; color:var(--text-secondary);">No completed generations yet. Start one in the Prompt Builder!</div>` : `
       <div class="grid-3">
         ${jobs.map((j) => `
-          <div class="card" style="padding:12px;">
-            ${j.mediaType === "video"
-              ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
-              : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; flex-wrap:wrap;">
-              <span class="tag cyan">${esc(j.presetId)}</span>
-              <span class="tag ${j.engineUsed === "fallback-synthesizer" ? "amber" : "green"}">${j.engineUsed === "fallback-synthesizer" ? "Sandbox Preview" : esc(j.engineUsed || j.backend)}${j.gpuIndex !== undefined ? ` · GPU #${j.gpuIndex}` : ""}</span>
+          <div class="card gallery-card">
+            <div>
+              <div class="gallery-media-wrap">
+                ${j.mediaType === "video"
+                  ? `<video src="${esc(appUrl(j.resultUrl))}" poster="${esc(appUrl(j.posterUrl || ""))}" controls muted playsinline class="media-thumb"></video>`
+                  : `<img src="${esc(appUrl(j.resultUrl))}" class="media-thumb" alt="${esc(j.prompt)}" style="cursor:pointer;" data-lightbox="${esc(j.jobId)}" />`}
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; flex-wrap:wrap;">
+                <span class="tag cyan">${esc(j.presetId)}</span>
+                ${j.options?.qualityMode && j.options.qualityMode !== "standard" ? `<span class="tag purple">${esc(j.options.qualityMode.toUpperCase())}</span>` : ""}
+                <span class="tag ${j.engineUsed === "fallback-synthesizer" ? "amber" : "green"}">${j.engineUsed === "fallback-synthesizer" ? "Sandbox Preview" : esc(j.engineUsed || j.backend)}${j.gpuIndex !== undefined ? ` · GPU #${j.gpuIndex}` : ""}</span>
+              </div>
+              <div style="font-size:12.5px; color:var(--text-primary); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(j.prompt)}</div>
             </div>
-            <div style="font-size:12.5px; color:var(--text-primary); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(j.prompt)}</div>
-            <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
-              <button class="btn-secondary btn-sm" data-reuse-seed="${esc(j.seed)}">Seed: ${esc(j.seed)}</button>
-              <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none;">⬇ Save</a>
+            <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+              <button class="btn-secondary btn-sm" data-remix-job="${esc(j.jobId)}" title="Load prompt, preset &amp; seed into Builder">🔄 Remix</button>
+              ${j.mediaType === "image" ? `<button class="btn-secondary btn-sm" data-upscale-job="${esc(j.jobId)}" title="Run 2x RealESRGAN crisp upscale">✨ 2× Upscale</button>` : ""}
+              <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none; margin-left:auto;">⬇ Save</a>
             </div>
           </div>
         `).join("")}
       </div>
     `}
   `;
-  stage.querySelectorAll("[data-reuse-seed]").forEach((b) => {
+  stage.querySelectorAll("[data-remix-job]").forEach((b) => {
     b.onclick = () => {
-      uiState.form.seed = b.dataset.reuseSeed;
+      const j = jobs.find((x) => x.jobId === b.dataset.remixJob);
+      if (!j) return;
+      uiState.selectedPresetId = j.presetId;
+      uiState.form.prompt = j.prompt;
+      uiState.form.seed = j.seed;
+      if (j.options?.aspectRatio) uiState.form.aspectRatio = j.options.aspectRatio;
+      if (j.options?.resolution) uiState.form.resolution = j.options.resolution;
+      if (j.options?.steps) uiState.form.steps = j.options.steps;
+      if (j.options?.cfg !== undefined) uiState.form.cfg = j.options.cfg;
+      if (j.options?.qualityMode) uiState.form.qualityMode = j.options.qualityMode;
       uiState.screen = "generate";
       uiState.wizardStep = 3;
-      toast(`Loaded seed ${b.dataset.reuseSeed} into Prompt Builder`);
+      toast(`Loaded "${j.presetId}" settings & seed ${j.seed} into Prompt Builder`);
       refreshAll();
+    };
+  });
+  stage.querySelectorAll("[data-upscale-job]").forEach((b) => {
+    b.onclick = () => {
+      const j = jobs.find((x) => x.jobId === b.dataset.upscaleJob);
+      if (j) triggerUpscaleJob(j);
     };
   });
   stage.querySelectorAll("[data-lightbox]").forEach((img) => {
@@ -776,10 +883,22 @@ export function renderGallery(stage, refreshAll) {
           <button class="btn-secondary btn-sm" id="closeLb">Close</button>
         </div>
         <img src="${esc(appUrl(j.resultUrl))}" style="width:100%; border-radius:12px; display:block;" />
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;">
+          <span class="tag cyan">${esc(j.options?.aspectRatio || "1:1")} · ${esc(j.options?.resolution || "720p")}</span>
+          ${j.options?.qualityMode ? `<span class="tag purple">Pass: ${esc(j.options.qualityMode)}</span>` : ""}
+          ${j.options?.steps ? `<span class="tag">Steps: ${esc(j.options.steps)}</span>` : ""}
+          ${j.options?.cfg !== undefined ? `<span class="tag">CFG: ${esc(j.options.cfg)}</span>` : ""}
+          <span class="tag green">${esc(j.engineUsed || j.backend)}${j.gpuIndex !== undefined ? ` · GPU #${j.gpuIndex}` : ""}</span>
+        </div>
         <p style="color:var(--text-secondary); font-size:13px; margin-top:10px;"><strong>Prompt:</strong> ${esc(j.prompt)}</p>
-        <p style="color:var(--text-muted); font-size:12px;"><strong>Execution Engine:</strong> <code>${esc(j.engineUsed || j.backend)}</code> · <strong>File:</strong> <code>${esc(j.resultPath)}</code></p>
+        <p style="color:var(--text-muted); font-size:12px;"><strong>File:</strong> <code>${esc(j.resultPath)}</code></p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn-primary btn-sm" id="lbUpscaleBtn">✨ Upscale 2× (RealESRGAN)</button>
+          <a class="btn-secondary btn-sm" href="${esc(appUrl(j.resultUrl))}" download style="text-decoration:none;">⬇ Download Full Image</a>
+        </div>
       `);
       document.getElementById("closeLb").onclick = closeModal;
+      document.getElementById("lbUpscaleBtn").onclick = () => { closeModal(); triggerUpscaleJob(j); };
     };
   });
 }
@@ -848,7 +967,12 @@ export function renderEnhance(stage, refreshAll) {
       } else if (jobId) {
         const j = jobs.find((x) => x.jobId === jobId);
         mediaType = j.mediaType;
-        // Generate an enhanced derivative
+        if (j?.resultUrl && j.mediaType === "image") {
+          const resp = await fetch(appUrl(j.resultUrl));
+          const blob = await resp.blob();
+          const up = await uploadBrowserFile(new File([blob], `${j.jobId}.png`, { type: blob.type || "image/png" }));
+          handle = up.handle;
+        }
       } else {
         return toast("Select a Gallery item or upload a file first.", true);
       }
@@ -964,13 +1088,16 @@ export function renderModelManager(stage, refreshAll) {
       <div class="card" style="margin-bottom:18px;">
         <h3 style="margin:0 0 10px; font-family:var(--font-display);">Download Missing Preset Weights (HuggingFace)</h3>
         <div class="grid-3">
-          ${downloadablePresets.slice(0, 6).map((c) => {
+          ${downloadablePresets.map((c) => {
             const totalGb = (c.requiredModels || []).reduce((s, m) => s + (m.sizeGb || 0), 0).toFixed(1);
             return `
-              <div style="border:1px solid var(--border-subtle); border-radius:10px; padding:10px; display:flex; flex-direction:column; justify-content:space-between; gap:8px;">
+              <div style="border:1px solid var(--border-subtle); border-radius:12px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; background:rgba(255,255,255,0.02);">
                 <div>
-                  <div style="font-weight:700; font-size:13px;">${esc(c.name)}</div>
-                  <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${(c.requiredModels || []).map((m) => esc(m.filename)).join(" + ")}</div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:4px;">
+                    <span style="font-weight:700; font-size:13.5px; color:#fff;">${esc(c.name)}</span>
+                    <span class="tag">${c.minVramGb} GB VRAM</span>
+                  </div>
+                  <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px; line-height:1.4;">${(c.requiredModels || []).map((m) => esc(m.filename)).join(" + ")}</div>
                 </div>
                 <button class="btn-secondary btn-sm" data-dl-preset="${esc(c.presetId)}" data-dl-pack="${esc(c.packId)}">⬇ Download (${totalGb} GB)</button>
               </div>
@@ -1019,11 +1146,13 @@ export function renderModelManager(stage, refreshAll) {
           <div class="grid-2">
             <input id="newLoraName" class="input" placeholder="Display Name" />
             <select id="newLoraBase" class="select">
-              <option value="flux">flux</option>
               <option value="z-image">z-image</option>
+              <option value="flux-klein">flux-klein</option>
+              <option value="krea-2">krea-2</option>
+              <option value="flux">flux</option>
+              <option value="sdxl">sdxl</option>
               <option value="wan-2.2">wan-2.2</option>
               <option value="ltx-2">ltx-2</option>
-              <option value="sdxl">sdxl</option>
             </select>
           </div>
           <div class="grid-2" style="margin-top:8px;">

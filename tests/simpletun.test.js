@@ -299,7 +299,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
     assert.equal(guideRes.status, 200);
     const guide = await guideRes.json();
     assert.equal(guide.family, "z-image");
-    assert.match(guide.text, /Z-Image Prompting Guide/);
+    assert.match(guide.text, /Z-Image(?:-Turbo)? Prompting Guide/);
 
     // Disk LoRA scanner starts empty; upload & create a real .safetensors LoRA
     const initialLoras = (await (await fetch(`${url}/loras`, { headers: authHeaders })).json()).loras;
@@ -686,8 +686,12 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       token,
     ]);
     const stdoutLines = [];
+    let stdoutBuf = "";
     child.stdout.on("data", (chunk) => {
-      for (const line of chunk.toString("utf8").split(/\r?\n/)) {
+      stdoutBuf += chunk.toString("utf8");
+      const parts = stdoutBuf.split(/\r?\n/);
+      stdoutBuf = parts.pop() || "";
+      for (const line of parts) {
         if (line.trim()) stdoutLines.push(JSON.parse(line));
       }
     });
@@ -722,10 +726,16 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
 
     const modelsRoot = store.modelsDir;
     const managedPath = path.join(modelsRoot, "checkpoints", "RealVisXL_V5.0_Lightning_fp16.safetensors");
+    const zUnetPath = path.join(modelsRoot, "diffusion_models", "z_image_turbo_int8_convrot.safetensors");
+    const zClipPath = path.join(modelsRoot, "text_encoders", "qwen_3_4b_fp8_mixed.safetensors");
+    const zVaePath = path.join(modelsRoot, "vae", "ae.safetensors");
     const orphanPath = path.join(modelsRoot, "checkpoints", "extra_orphan.safetensors");
     const rootMisplacedPath = path.join(modelsRoot, "misplaced.safetensors");
     const corruptPath = path.join(modelsRoot, "checkpoints", "truncated_model.safetensors");
     fs.writeFileSync(managedPath, buildSafetensorsBytes("sdxl"));
+    fs.writeFileSync(zUnetPath, buildSafetensorsBytes("z-image"));
+    fs.writeFileSync(zClipPath, buildSafetensorsBytes("qwen"));
+    fs.writeFileSync(zVaePath, buildSafetensorsBytes("vae"));
     fs.writeFileSync(orphanPath, buildSafetensorsBytes("flux"));
     fs.writeFileSync(rootMisplacedPath, buildSafetensorsBytes("sdxl"));
     // Write a truncated safetensors file missing its final 4 payload bytes
@@ -740,11 +750,14 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
 
     const scanned = scanModelsDirectory(modelsRoot, store.listPacks(), store.getCapabilities());
     const managed = scanned.files.find((f) => f.filename === "RealVisXL_V5.0_Lightning_fp16.safetensors");
+    const zManaged = scanned.files.find((f) => f.filename === "z_image_turbo_int8_convrot.safetensors");
     const orphan = scanned.files.find((f) => f.filename === "extra_orphan.safetensors");
     const misplaced = scanned.files.find((f) => f.filename === "misplaced.safetensors");
     const corrupt = scanned.files.find((f) => f.filename === "truncated_model.safetensors");
     assert.equal(managed.status, "Managed");
-    assert.ok(managed.usedByPresets.includes("z-image-turbo"));
+    assert.ok(managed.usedByPresets.includes("realvis-xl-lightning"));
+    assert.equal(zManaged.status, "Managed");
+    assert.ok(zManaged.usedByPresets.includes("z-image-turbo"));
     assert.equal(orphan.status, "External");
     assert.equal(orphan.safetensors.tensorCount, 1);
     assert.equal(misplaced.status, "Not in a model folder");
@@ -851,7 +864,7 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
         }),
       });
 
-      // z-image-turbo weight (RealVisXL_V5.0_Lightning_fp16.safetensors) already created above -> passes preflight and fails at offline ComfyUI (no silent fallback)
+      // z-image-turbo weights (z_image_turbo_int8_convrot + qwen_3_4b_fp8_mixed + ae) & realvis-xl-lightning already created above -> passes preflight and fails at offline ComfyUI (no silent fallback)
       const strictGen = await fetch(`${url}/generate`, {
         method: "POST",
         headers: authHeaders,
@@ -955,5 +968,58 @@ test("SimpleTun End-to-End Control API, Studios, Video Timeline, and 74-Tool MCP
       gpu0.close();
       gpu1.close();
     }
+  });
+
+  await t.test("2026 ComfyUI v0.45 Graph Compilers (Z-Image-Turbo, FLUX.2 Klein, Krea-2, Qwen 2.1) & 2-Pass Hires Fix", async () => {
+    const caps = (await (await fetch(`${url}/capabilities`, { headers: authHeaders })).json()).capabilities;
+    const zPreset = caps.find((c) => c.presetId === "z-image-turbo");
+    const kleinPreset = caps.find((c) => c.presetId === "flux-klein");
+    const kreaPreset = caps.find((c) => c.presetId === "krea2-turbo");
+    const qwenPreset = caps.find((c) => c.presetId === "qwen-image-21");
+    const realvisPreset = caps.find((c) => c.presetId === "realvis-xl-lightning");
+    assert.ok(zPreset && kleinPreset && kreaPreset && qwenPreset && realvisPreset);
+
+    // 1. Z-Image-Turbo with 2-pass Hires Fix
+    const zHires = compileComfyWorkflow({
+      preset: zPreset,
+      prompt: "editorial portrait of a red fox in fresh alpine snow",
+      seed: 101,
+      aspectRatio: "16:9",
+      resolution: "720p",
+      qualityMode: "hires",
+    });
+    assert.equal(zHires["2"].class_type, "CLIPLoader");
+    assert.equal(zHires["2"].inputs.type, "lumina2");
+    assert.equal(zHires["15"].class_type, "ModelSamplingAuraFlow");
+    assert.equal(zHires["20"].class_type, "LatentUpscale");
+    assert.equal(zHires["20"].inputs.width % 64, 0);
+    assert.equal(zHires["20"].inputs.height % 64, 0);
+    assert.equal(zHires["21"].class_type, "KSampler");
+    assert.ok(zHires["21"].inputs.denoise > 0 && zHires["21"].inputs.denoise < 0.6);
+
+    // 2. FLUX.2 Klein 4B with Flux2Scheduler + SamplerCustomAdvanced + Hires Fix
+    const fHires = compileComfyWorkflow({
+      preset: kleinPreset,
+      prompt: "product photo",
+      seed: 202,
+      qualityMode: "ultra",
+    });
+    assert.equal(fHires["2"].inputs.type, "flux2");
+    assert.equal(fHires["7"].class_type, "EmptyFlux2LatentImage");
+    assert.equal(fHires["9"].class_type, "Flux2Scheduler");
+    assert.equal(fHires["16"].class_type, "SamplerCustomAdvanced");
+    assert.equal(fHires["20"].class_type, "LatentUpscale");
+    assert.equal(fHires["22"].class_type, "SplitSigmasDenoise");
+    assert.equal(fHires["24"].class_type, "SamplerCustomAdvanced");
+
+    // 3. Krea 2 Turbo & Qwen Image 2.1
+    const kWf = compileComfyWorkflow({ preset: kreaPreset, prompt: "studio watch" });
+    assert.equal(kWf["2"].inputs.type, "krea2");
+    const qWf = compileComfyWorkflow({ preset: qwenPreset, prompt: "bookshop storefront" });
+    assert.equal(qWf["2"].inputs.type, "qwen_image");
+
+    // 4. UI Bootstrap reports ComfyUI v0.45.0 target
+    const boot = await (await fetch(`${url}/api/ui/bootstrap`, { headers: { ...authHeaders, "X-SimpleTun-UI": "1" } })).json();
+    assert.equal(boot.engine.targetVersion, "v0.45.0");
   });
 });

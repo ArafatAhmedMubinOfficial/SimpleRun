@@ -19,6 +19,7 @@ try {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SimpleTunStore, ApiError } from "./state.js";
+import { COMFYUI_RELEASE_VERSION } from "./comfy-engine.js";
 import {
   CHARACTER_FEATURES,
   CHARACTER_PRESETS,
@@ -262,8 +263,9 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
 
       // ---- Built-in UI Management Endpoints ----
       if (method === "GET" && pathname === "/api/ui/bootstrap") {
+        const statusObj = await store.getStatus();
         return sendJson(res, 200, {
-          status: await store.getStatus(),
+          status: statusObj,
           capabilities: store.getCapabilities(),
           packs: store.listPacks(),
           models: store.listModelFiles(),
@@ -292,6 +294,9 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
             installed: store.engineManager.isInstalled(),
             installing: store.engineManager.installing,
             installStage: store.engineManager.installStage,
+            installedVersion: statusObj.engineVersion,
+            targetVersion: COMFYUI_RELEASE_VERSION,
+            needsUpgrade: Boolean(statusObj.engineNeedsUpgrade),
             comfyUiUrl: store.engineManager.comfyUrl,
             externalComfyDir: store.engineManager.externalComfyDir,
             logs: store.engineManager.logs.slice(-40),
@@ -306,11 +311,18 @@ export function createSimpleTunServer({ rootDir = ROOT_DIR, allowRemoteHosts, al
       if (method === "POST" && pathname === "/api/ui/engine/install") {
         return sendJson(res, 202, store.installLocalEngine());
       }
+      if (method === "POST" && pathname === "/api/ui/engine/upgrade") {
+        return sendJson(res, 202, store.upgradeLocalEngine());
+      }
       if (method === "GET" && pathname === "/api/ui/engine/logs") {
+        const statusObj = await store.getStatus();
         return sendJson(res, 200, {
           installed: store.engineManager.isInstalled(),
           installing: store.engineManager.installing,
           installStage: store.engineManager.installStage,
+          installedVersion: statusObj.engineVersion,
+          targetVersion: COMFYUI_RELEASE_VERSION,
+          needsUpgrade: Boolean(statusObj.engineNeedsUpgrade),
           logs: store.engineManager.logs.slice(-80),
         });
       }

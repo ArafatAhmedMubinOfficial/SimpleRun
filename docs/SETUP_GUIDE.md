@@ -217,4 +217,19 @@ npm run electron
 | `401 download_auth_required` from HuggingFace / Civitai | The weight repo is gated or requires authentication. Save your `hf_...` Read Token (and accept the model license on huggingface.co) or Civitai API key in **Model Manager**. |
 | `400 no_pulse` in Video Studio Tempo Detection | Uploaded audio is silent, under 1.5s, or has no rhythmic onset periodicity between 68 and 165 BPM. Upload an audio track with clear percussive/melodic transients, or verify `ffmpeg` is on `PATH` for `.mp3`/`.m4a`/`.ogg`. |
 | Video export fails in Video Studio | Ensure `ffmpeg` is installed and accessible (`ffmpeg -version`). SimpleTun falls back to synthetic container output only if `ffmpeg` cannot write the merged MP4. |
-| `403 forbidden_host` when accessing API | SimpleTun rejects non-loopback `Host` headers (`127.0.0.1`, `localhost`, `[::1]`) for DNS-rebinding protection. Access strictly over loopback. |
+| `403 forbidden_host` when accessing API | SimpleTun rejects non-loopback `Host` headers (`127.0.0.1`, `localhost`, `[::1]`) for DNS-rebinding protection. Launch via `npm run start:remote` or set `SIMPLETUN_ALLOWED_HOSTS` for cloud proxies. |
+
+---
+
+## 9. Best Open-Source Models & Quality Tips (15–16 GB GPUs / 2× Tesla T4)
+
+1. **Upgrade ComfyUI to `v0.45.0`**: Open **Local Engine** -> click **Upgrade ComfyUI to v0.45.0** so `Z-Image-Turbo`, `FLUX.2 Klein 4B`, `Krea 2 Turbo`, and `Qwen-Image 2.1` run natively.
+2. **Choose the right model for your goal**:
+   - **Best Overall Speed + Photorealism (`z-image-turbo`)**: `Z-Image-Turbo` INT8 + Qwen3-4B (11.34 GB total, 8 steps, CFG 1.0).
+   - **Best Clean Composition & Text (`flux-klein`)**: `FLUX.2 [Klein] 4B` (7.22 GB UNet + Qwen3-4B, 4 steps, CFG 1.0).
+   - **Best Organic Skin/Film Grain (`krea2-turbo`)**: `Krea 2 Turbo INT8` (12.57 GB UNet + Qwen3-VL 4B, 8 steps, CFG 1.0).
+   - **Best Dense Typography / Product Packaging (`qwen-image-21`)**: `Qwen-Image 2.1 INT8` (6.76 GB UNet + Qwen3-VL 8B, 25 steps, CFG 1.0).
+   - **Fast 1-File SDXL (`realvis-xl-lightning` / `z-image-pro`)**: Single `.safetensors` file (6.46–6.62 GB).
+3. **Eliminate Artifacts & Blurry Textures**:
+   - Select **Hires Fix 1.5x** (or **Ultra 2-Pass**) in Prompt Builder Step 3 to run a 2nd latent refinement pass at `denoise 0.40–0.48`.
+   - Follow with **2× Upscale (`RealESRGAN_x2`)** right from the Gallery or Lightbox.
